@@ -1,0 +1,16 @@
+{
+    "name": "dio-napi",
+    "version": "0.1.0",
+    "description": "Node.js bindings for dio JavaScript deobfuscator",
+    "main": "index.js",
+    "scripts": {
+        "build": "napi build --release",
+        "build-debug": "napi build"
+    },
+    "napi": {
+        "name": "dio-napi"
+    },
+    "devDependencies": {
+        "@napi-rs/cli": "^2"
+    }
+}

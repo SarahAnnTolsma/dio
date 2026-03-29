@@ -1,0 +1,12 @@
+[package]
+name = "dio-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C-compatible FFI bindings for dio JavaScript deobfuscator"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+dio-core = { path = "../dio-core" }

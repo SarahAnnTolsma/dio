@@ -1,0 +1,16 @@
+[package]
+name = "dio-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core JavaScript deobfuscation library"
+
+[dependencies]
+oxc_allocator.workspace = true
+oxc_parser.workspace = true
+oxc_ast.workspace = true
+oxc_semantic.workspace = true
+oxc_traverse.workspace = true
+oxc_codegen.workspace = true
+oxc_span.workspace = true
+oxc_syntax.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "dio-napi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Node.js native addon for dio JavaScript deobfuscator"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dio-core = { path = "../dio-core" }
+napi = { version = "2", features = ["default"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"

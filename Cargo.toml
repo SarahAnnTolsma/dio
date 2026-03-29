@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dio-core",
+    "crates/dio-cli",
+    "crates/dio-ffi",
+    "crates/dio-napi",
+    "crates/dio-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+
+[workspace.dependencies]
+oxc_allocator = "0.122"
+oxc_parser = "0.122"
+oxc_ast = "0.122"
+oxc_semantic = "0.122"
+oxc_traverse = "0.122"
+oxc_codegen = "0.122"
+oxc_span = "0.122"
+oxc_syntax = "0.122"

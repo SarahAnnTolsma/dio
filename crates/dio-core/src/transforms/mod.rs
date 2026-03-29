@@ -1,0 +1,31 @@
+//! Built-in transformer implementations grouped by category.
+
+pub mod constant;
+pub mod elimination;
+pub mod evaluation;
+pub mod renaming;
+pub mod simplification;
+pub mod string;
+
+use crate::transformer::Transformer;
+
+/// Returns the default set of built-in transformers.
+///
+/// These are registered in a reasonable default order, though the dispatch
+/// system uses priority and phase rather than registration order.
+pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
+    vec![
+        // Main phase, First priority
+        Box::new(constant::ConstantInliningTransformer),
+        // Main phase, Default priority
+        Box::new(constant::ConstantFoldingTransformer),
+        Box::new(string::StringConcatenationTransformer),
+        Box::new(evaluation::BuiltinEvaluationTransformer),
+        Box::new(simplification::CommaTransformer),
+        Box::new(simplification::MemberTransformer),
+        Box::new(simplification::ControlFlowTransformer),
+        // Finalize phase
+        Box::new(elimination::DeadCodeTransformer),
+        Box::new(renaming::VariableRenamingTransformer),
+    ]
+}
