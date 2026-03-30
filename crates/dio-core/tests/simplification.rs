@@ -142,10 +142,9 @@ fn comma_simplification() {
 
 #[test]
 fn comma_with_identifiers() {
-    assert_eq!(
-        deobfuscate("var a = 1; var x = (a, 2, 3);"),
-        "var a = 1;\nvar x = 3;"
-    );
+    // `a` is a constant (1), so it gets inlined into the sequence,
+    // then the comma transformer drops the side-effect-free leading values.
+    assert_eq!(deobfuscate("var a = 1; var x = (a, 2, 3);"), "var x = 3;");
 }
 
 #[test]

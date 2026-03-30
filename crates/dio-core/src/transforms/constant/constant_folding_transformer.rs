@@ -154,8 +154,8 @@ fn try_fold_binary_expression<'a>(
     }
 
     // Try string concatenation: both sides are string literals (looking through parens).
-    if binary.operator == BinaryOperator::Addition {
-        if let (Expression::StringLiteral(left), Expression::StringLiteral(right)) =
+    if binary.operator == BinaryOperator::Addition
+        && let (Expression::StringLiteral(left), Expression::StringLiteral(right)) =
             (unwrap_parens(&binary.left), unwrap_parens(&binary.right))
         {
             let mut concatenated = left.value.to_string();
@@ -164,7 +164,6 @@ fn try_fold_binary_expression<'a>(
             operations::replace_expression(expression, replacement, context);
             return true;
         }
-    }
 
     false
 }

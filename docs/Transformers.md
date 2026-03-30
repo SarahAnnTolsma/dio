@@ -14,7 +14,7 @@ Transformers that evaluate or propagate constant values.
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
 | ConstantFoldingTransformer | Active | Main | Folds constant arithmetic, comparisons, typeof, void, and type coercion (JSFuck patterns) |
-| ConstantInliningTransformer | Stub | Main | Inlines single-assignment constants into their references |
+| ConstantInliningTransformer | Active | Main | Inlines single-assignment constants (var/let/const with no write references) into their references |
 
 ### [Evaluation](Evaluation.md)
 
@@ -54,7 +54,7 @@ Transformers that inline function calls and remove indirection.
 
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
-| ProxyFunctionInliningTransformer | Stub | Main | Inlines proxy functions that wrap a single operation |
+| ProxyFunctionInliningTransformer | Active | Main | Inlines proxy functions that wrap a binary operation, call forwarding, or identity |
 
 ### [Elimination](Elimination.md)
 

@@ -669,14 +669,13 @@ fn try_evaluate_static_member_access<'a>(
     }
 
     // `[1,2,3].length` -> `3` (only when all elements are literals).
-    if let Expression::ArrayExpression(array) = object {
-        if all_elements_are_literals(&array.elements) {
+    if let Expression::ArrayExpression(array) = object
+        && all_elements_are_literals(&array.elements) {
             let length = array.elements.len() as f64;
             let replacement = make_numeric_literal(context, length);
             operations::replace_expression(expression, replacement, context);
             return true;
         }
-    }
 
     false
 }

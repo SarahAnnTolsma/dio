@@ -173,11 +173,10 @@ impl ExpressionPattern {
 
             // -- Concrete matchers --
             ExpressionPattern::Identifier(name) => {
-                if let Expression::Identifier(identifier) = expression {
-                    if identifier.name.as_str() == name {
+                if let Expression::Identifier(identifier) = expression
+                    && identifier.name.as_str() == name {
                         return MatchResult::matched();
                     }
-                }
                 MatchResult::no_match()
             }
 
@@ -190,11 +189,10 @@ impl ExpressionPattern {
             }
 
             ExpressionPattern::Number(expected) => {
-                if let Expression::NumericLiteral(number) = expression {
-                    if (number.value - expected).abs() < f64::EPSILON {
+                if let Expression::NumericLiteral(number) = expression
+                    && (number.value - expected).abs() < f64::EPSILON {
                         return MatchResult::matched();
                     }
-                }
                 MatchResult::no_match()
             }
 
@@ -207,11 +205,10 @@ impl ExpressionPattern {
             }
 
             ExpressionPattern::StringLiteral(expected) => {
-                if let Expression::StringLiteral(string) = expression {
-                    if string.value.as_str() == expected {
+                if let Expression::StringLiteral(string) = expression
+                    && string.value.as_str() == expected {
                         return MatchResult::matched();
                     }
-                }
                 MatchResult::no_match()
             }
 
@@ -224,11 +221,10 @@ impl ExpressionPattern {
             }
 
             ExpressionPattern::Boolean(expected) => {
-                if let Expression::BooleanLiteral(boolean) = expression {
-                    if boolean.value == *expected {
+                if let Expression::BooleanLiteral(boolean) = expression
+                    && boolean.value == *expected {
                         return MatchResult::matched();
                     }
-                }
                 MatchResult::no_match()
             }
 
@@ -241,8 +237,8 @@ impl ExpressionPattern {
             }
 
             ExpressionPattern::BinaryExpression(operator, left_pattern, right_pattern) => {
-                if let Expression::BinaryExpression(binary) = expression {
-                    if binary.operator == *operator {
+                if let Expression::BinaryExpression(binary) = expression
+                    && binary.operator == *operator {
                         let left_result = left_pattern.match_expression(&binary.left);
                         if !left_result.matched {
                             return MatchResult::no_match();
@@ -256,7 +252,6 @@ impl ExpressionPattern {
                         result.merge_captures(&right_result);
                         return result;
                     }
-                }
                 MatchResult::no_match()
             }
 
@@ -269,11 +264,10 @@ impl ExpressionPattern {
             }
 
             ExpressionPattern::UnaryExpression(operator, argument_pattern) => {
-                if let Expression::UnaryExpression(unary) = expression {
-                    if unary.operator == *operator {
+                if let Expression::UnaryExpression(unary) = expression
+                    && unary.operator == *operator {
                         return argument_pattern.match_expression(&unary.argument);
                     }
-                }
                 MatchResult::no_match()
             }
 
@@ -396,8 +390,8 @@ impl ExpressionPattern {
             }
 
             ExpressionPattern::AssignmentExpression(operator, left_pattern, right_pattern) => {
-                if let Expression::AssignmentExpression(assignment) = expression {
-                    if assignment.operator == *operator {
+                if let Expression::AssignmentExpression(assignment) = expression
+                    && assignment.operator == *operator {
                         // The left side of an assignment is an AssignmentTarget, not an Expression.
                         // For simple identifier targets, we can match against the name.
                         let left_match = match (&assignment.left, left_pattern.as_ref()) {
@@ -421,7 +415,6 @@ impl ExpressionPattern {
                             }
                         }
                     }
-                }
                 MatchResult::no_match()
             }
 

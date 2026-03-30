@@ -17,8 +17,8 @@ use crate::transformer::Transformer;
 pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
     vec![
         // Main phase, First priority
-        Box::new(constant::ConstantInliningTransformer),
-        Box::new(inlining::ProxyFunctionInliningTransformer),
+        Box::new(constant::ConstantInliningTransformer::default()),
+        Box::new(inlining::ProxyFunctionInliningTransformer::default()),
         // Main phase, Default priority
         Box::new(simplification::BlockNormalizationTransformer),
         Box::new(simplification::BitwiseSimplificationTransformer),

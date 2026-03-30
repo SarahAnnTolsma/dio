@@ -76,13 +76,11 @@ impl Transformer for BuiltinEvaluationTransformer {
 
 /// Check if the callee is `ObjectName.methodName`.
 fn is_static_member_call(callee: &Expression<'_>, object_name: &str, method_name: &str) -> bool {
-    if let Expression::StaticMemberExpression(member) = callee {
-        if member.property.name.as_str() == method_name {
-            if let Expression::Identifier(identifier) = &member.object {
+    if let Expression::StaticMemberExpression(member) = callee
+        && member.property.name.as_str() == method_name
+            && let Expression::Identifier(identifier) = &member.object {
                 return identifier.name.as_str() == object_name;
             }
-        }
-    }
     false
 }
 

@@ -160,15 +160,67 @@ var d = 2;
 
 ## ConstantInliningTransformer
 
-**Status: Stub** - not yet implemented.
+Inlines variables that are assigned once to a literal value and never reassigned. Works with `var`, `let`, and `const` declarations — checks for write references via scoping rather than relying on the declaration keyword. Removes the declaration after all references are inlined.
 
-Will inline single-assignment constant variables into their references:
+### Basic inlining
 
 ```js
 // Before
-const x = 5;
-f(x);
+var x = 5;
+console.log(x);
 
 // After
-f(5);
+console.log(5);
+```
+
+### String constants
+
+```js
+// Before
+var greeting = "hello";
+var msg = greeting;
+
+// After
+var msg = "hello";
+```
+
+### Multiple references
+
+```js
+// Before
+var key = 42;
+f(key);
+g(key);
+
+// After
+f(42);
+g(42);
+```
+
+### Skips reassigned variables
+
+```js
+// Before
+var x = 5;
+x = 10;
+console.log(x);
+
+// After (unchanged — x has write references)
+var x = 5;
+x = 10;
+console.log(x);
+```
+
+### Chained inlining
+
+Through the convergence loop, transitive constants are resolved:
+
+```js
+// Before
+var a = 1;
+var b = a;
+console.log(b);
+
+// After
+console.log(1);
 ```
