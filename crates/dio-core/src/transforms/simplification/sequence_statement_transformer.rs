@@ -3,6 +3,7 @@
 //! When a sequence (comma) expression is used in a position where only the last
 //! value matters, the leading expressions are hoisted as standalone statements:
 //!
+//! - `(a, b, c);` -> `a; b; c;` (expression statement)
 //! - `return (a, b, c);` -> `a; b; return c;`
 //! - `if (a, b, c) { ... }` -> `a; b; if (c) { ... }`
 //! - `while (a, b, c) { ... }` -> `a; b; while (c) { ... }`
@@ -81,6 +82,33 @@ fn try_extract_leading_expressions<'a>(
     statement: &mut Statement<'a>,
     context: &mut TraverseCtx<'a, ()>,
 ) -> Option<Vec<Statement<'a>>> {
+    // Special case: ExpressionStatement with a sequence expression.
+    // `(a, b, c);` → `a; b; c;` — all expressions become standalone statements.
+    if let Statement::ExpressionStatement(expression_statement) = statement {
+        let inner = unwrap_parens_mut(&mut expression_statement.expression);
+        if matches!(inner, Expression::SequenceExpression(seq) if seq.expressions.len() > 1) {
+            let Expression::SequenceExpression(sequence) = inner else {
+                unreachable!();
+            };
+
+            let mut all_statements: Vec<Statement<'a>> = Vec::new();
+            for expression in sequence.expressions.drain(..) {
+                all_statements.push(context.ast.statement_expression(SPAN, expression));
+            }
+
+            // The last extracted statement replaces the original.
+            let last = all_statements.pop().unwrap();
+            *statement = last;
+
+            // Return the leading statements (to be inserted before).
+            if all_statements.is_empty() {
+                return None;
+            }
+            return Some(all_statements);
+        }
+        return None;
+    }
+
     let target_expression = match statement {
         Statement::ReturnStatement(return_statement) => return_statement.argument.as_mut()?,
         Statement::IfStatement(if_statement) => &mut if_statement.test,

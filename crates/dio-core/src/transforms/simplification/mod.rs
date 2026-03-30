@@ -8,6 +8,7 @@ mod logical_to_if_transformer;
 mod member_transformer;
 mod sequence_statement_transformer;
 mod ternary_to_if_transformer;
+mod variable_declaration_split_transformer;
 
 pub use bitwise_simplification_transformer::BitwiseSimplificationTransformer;
 pub use block_normalization_transformer::BlockNormalizationTransformer;
@@ -17,3 +18,4 @@ pub use logical_to_if_transformer::LogicalToIfTransformer;
 pub use member_transformer::MemberTransformer;
 pub use sequence_statement_transformer::SequenceStatementTransformer;
 pub use ternary_to_if_transformer::TernaryToIfTransformer;
+pub use variable_declaration_split_transformer::VariableDeclarationSplitTransformer;

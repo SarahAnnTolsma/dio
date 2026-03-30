@@ -206,9 +206,21 @@ console.log("hi");
 
 ## SequenceStatementTransformer
 
-Extracts leading expressions from sequence expressions in `return`, `if`, `while`, `throw`, `switch`, and `for` (test position) statements, hoisting them as standalone statements. This preserves side effects that the CommaTransformer would not handle.
+Splits sequence expressions in expression statements into individual statements, and extracts leading expressions from sequence expressions in `return`, `if`, `while`, `throw`, `switch`, and `for` (test position) statements, hoisting them as standalone statements. This preserves side effects that the CommaTransformer would not handle.
 
 Note: `do { ... } while (a, b, c);` is NOT handled because the while condition runs after the body, so hoisting would change execution order.
+
+### Expression statements
+
+```js
+// Before
+(a(), b(), c());
+
+// After
+a();
+b();
+c();
+```
 
 ### Return statements
 
@@ -312,4 +324,29 @@ true ? y() : z();
 
 // After (intermediate: if (true) { y(); } else { z(); })
 y();
+```
+
+## VariableDeclarationSplitTransformer
+
+Splits multi-declarator variable declarations into individual statements. This makes each declaration independent, enabling constant inlining and dead code elimination to act on them individually.
+
+```js
+// Before
+var a = 1, b = 2, c = 3;
+
+// After
+var a = 1;
+var b = 2;
+var c = 3;
+```
+
+Preserves the declaration kind (`var`, `let`, `const`):
+
+```js
+// Before
+let x = "hello", y = "world";
+
+// After
+let x = "hello";
+let y = "world";
 ```

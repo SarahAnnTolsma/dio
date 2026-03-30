@@ -45,8 +45,9 @@ Transformers that normalize and simplify control flow and expressions.
 | ControlFlowTransformer | Active | Main | Simplifies if/else and ternaries with constant conditions |
 | MemberTransformer | Active | Main | Converts computed member access to dot notation |
 | LogicalToIfTransformer | Active | Main | Converts standalone logical &&/\|\| expressions to if statements |
-| SequenceStatementTransformer | Active | Main | Hoists leading expressions from sequences in return/if/while/throw/switch/for |
+| SequenceStatementTransformer | Active | Main | Splits sequence expressions in expression statements and hoists leading expressions from sequences in return/if/while/throw/switch/for |
 | TernaryToIfTransformer | Active | Main | Converts standalone ternary expressions to if/else |
+| VariableDeclarationSplitTransformer | Active | Main | Splits multi-declarator variable declarations into individual statements |
 
 ### [Inlining](Inlining.md)
 

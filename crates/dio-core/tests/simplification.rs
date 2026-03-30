@@ -229,6 +229,77 @@ fn sequence_for_test() {
 }
 
 // ---------------------------------------------------------------------------
+// Sequence expression statement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sequence_expression_statement() {
+    assert_eq!(
+        deobfuscate("(a(), b(), c());"),
+        "a();\nb();\nc();"
+    );
+}
+
+#[test]
+fn sequence_expression_statement_two() {
+    assert_eq!(deobfuscate("(a(), b());"), "a();\nb();");
+}
+
+#[test]
+fn sequence_expression_statement_single_not_affected() {
+    assert_eq!(deobfuscate("a();"), "a();");
+}
+
+// ---------------------------------------------------------------------------
+// Variable declaration splitting
+// ---------------------------------------------------------------------------
+
+#[test]
+fn variable_declaration_split_var() {
+    assert_eq!(
+        deobfuscate("var a = 1, b = 2, c = 3;"),
+        "var a = 1;\nvar b = 2;\nvar c = 3;"
+    );
+}
+
+#[test]
+fn variable_declaration_split_let() {
+    assert_eq!(
+        deobfuscate("let a = 1, b = 2;"),
+        "let a = 1;\nlet b = 2;"
+    );
+}
+
+#[test]
+fn variable_declaration_split_const() {
+    assert_eq!(
+        deobfuscate("const a = 1, b = 2;"),
+        "const a = 1;\nconst b = 2;"
+    );
+}
+
+#[test]
+fn variable_declaration_single_unchanged() {
+    assert_eq!(deobfuscate("var x = 1;"), "var x = 1;");
+}
+
+#[test]
+fn variable_declaration_split_no_init() {
+    assert_eq!(
+        deobfuscate("var a, b, c;"),
+        "var a;\nvar b;\nvar c;"
+    );
+}
+
+#[test]
+fn variable_declaration_split_mixed_init() {
+    assert_eq!(
+        deobfuscate("var a = 1, b, c = 3;"),
+        "var a = 1;\nvar b;\nvar c = 3;"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Member expression
 // ---------------------------------------------------------------------------
 

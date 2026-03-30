@@ -155,10 +155,10 @@ fn multiple_declarators_all_inlinable() {
 
 #[test]
 fn multiple_declarators_partial_inlinable() {
-    // `a` is inlinable (not reassigned); `b` is reassigned so it is not.
-    // The declaration is kept because it still contains `b`.
+    // The declaration is split first, then `a` is inlined (not reassigned).
+    // `b` is reassigned so it is kept.
     assert_eq!(
         deobfuscate("var a = 1, b = 2; b = 3; console.log(a, b);"),
-        "var a = 1, b = 2;\nb = 3;\nconsole.log(1, b);"
+        "var b = 2;\nb = 3;\nconsole.log(1, b);"
     );
 }
