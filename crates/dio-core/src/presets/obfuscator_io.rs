@@ -20,6 +20,10 @@ pub fn transformers() -> Vec<Box<dyn Transformer>> {
         Box::new(transforms::inlining::StringArrayDecoderTransformer::default())
             as Box<dyn Transformer>,
     );
+    result.push(
+        Box::new(transforms::inlining::StringArrayRotationTransformer::default())
+            as Box<dyn Transformer>,
+    );
 
     // Then all general-purpose transforms.
     result.extend(transforms::default_transformers());
