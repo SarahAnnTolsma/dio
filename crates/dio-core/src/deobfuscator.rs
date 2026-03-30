@@ -2,15 +2,14 @@
 
 use std::collections::HashMap;
 
-use oxc_allocator::Allocator;
-use oxc_ast::ast::{Expression, Program, Statement};
+use oxc_allocator::{Allocator, Vec as ArenaVec};
+use oxc_ast::ast::{Expression, Statement};
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
 
-use crate::context::TransformContext;
 use crate::diagnostics::TransformDiagnostics;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 use crate::transforms;
@@ -107,10 +106,9 @@ impl Deobfuscator {
 
         let mut program = parser_return.program;
 
-        // Build initial scoping information.
+        // Build initial scoping information (once — operations keep it in sync).
         let semantic_return = SemanticBuilder::new().build(&program);
-        let scoping = semantic_return.semantic.into_scoping();
-        let mut context = TransformContext::new(&allocator, scoping);
+        let mut scoping = semantic_return.semantic.into_scoping();
 
         // Build dispatch tables for main and finalize phases.
         let main_dispatch = DispatchTable::build(&self.transformers, TransformerPhase::Main);
@@ -124,27 +122,51 @@ impl Deobfuscator {
         // Outer loop: main convergence + finalize, repeat if finalize changes anything.
         for _ in 0..self.max_iterations {
             // -- Main phase: run until convergence --
-            let main_changed = self.run_phase(
-                &main_dispatch,
-                &mut program,
-                &mut context,
-                &allocator,
-                &mut diagnostics,
-                true,
-            );
+            loop {
+                let main_changed = {
+                    let mut visitor = DispatchVisitor {
+                        transformers: &self.transformers,
+                        dispatch: &main_dispatch,
+                        diagnostics: &mut diagnostics,
+                        changed: false,
+                    };
 
-            if main_changed {
+                    scoping = traverse_mut(
+                        &mut visitor,
+                        &allocator,
+                        &mut program,
+                        scoping,
+                        (),
+                    );
+
+                    visitor.changed
+                };
+
+                if !main_changed {
+                    break;
+                }
                 diagnostics.total_main_iterations += 1;
             }
 
             // -- Finalize phase --
-            let finalize_changed = self.run_single_pass(
-                &finalize_dispatch,
-                &mut program,
-                &mut context,
-                &allocator,
-                &mut diagnostics,
-            );
+            let finalize_changed = {
+                let mut visitor = DispatchVisitor {
+                    transformers: &self.transformers,
+                    dispatch: &finalize_dispatch,
+                    diagnostics: &mut diagnostics,
+                    changed: false,
+                };
+
+                scoping = traverse_mut(
+                    &mut visitor,
+                    &allocator,
+                    &mut program,
+                    scoping,
+                    (),
+                );
+
+                visitor.changed
+            };
 
             diagnostics.total_finalize_iterations += 1;
 
@@ -153,9 +175,7 @@ impl Deobfuscator {
                 break;
             }
 
-            // Finalize made changes — rebuild scoping and restart main phase.
-            let semantic_return = SemanticBuilder::new().build(&program);
-            context.scoping = semantic_return.semantic.into_scoping();
+            // Finalize made changes — restart main phase.
         }
 
         // Report diagnostics if a callback is registered.
@@ -167,66 +187,6 @@ impl Deobfuscator {
             .with_options(self.codegen_options.clone())
             .build(&program)
             .code
-    }
-
-    /// Run the main phase until convergence (all transformers return false).
-    /// Returns true if any changes were made at all.
-    fn run_phase<'a>(
-        &self,
-        dispatch: &DispatchTable,
-        program: &mut Program<'a>,
-        context: &mut TransformContext<'a>,
-        allocator: &'a Allocator,
-        diagnostics: &mut TransformDiagnostics,
-        rebuild_scoping_between_passes: bool,
-    ) -> bool {
-        let mut any_changed_overall = false;
-
-        for _ in 0..self.max_iterations {
-            let changed = self.run_single_pass(dispatch, program, context, allocator, diagnostics);
-
-            if !changed {
-                break;
-            }
-
-            any_changed_overall = true;
-            diagnostics.total_main_iterations += 1;
-
-            if rebuild_scoping_between_passes {
-                let semantic_return = SemanticBuilder::new().build(program);
-                context.scoping = semantic_return.semantic.into_scoping();
-            }
-        }
-
-        any_changed_overall
-    }
-
-    /// Run a single traversal pass, dispatching nodes to interested transformers.
-    /// Returns true if any transformer modified the AST.
-    fn run_single_pass<'a>(
-        &self,
-        dispatch: &DispatchTable,
-        program: &mut Program<'a>,
-        context: &mut TransformContext<'a>,
-        _allocator: &'a Allocator,
-        diagnostics: &mut TransformDiagnostics,
-    ) -> bool {
-        let mut visitor = DispatchVisitor {
-            transformers: &self.transformers,
-            dispatch,
-            diagnostics,
-            changed: false,
-        };
-
-        context.scoping = traverse_mut(
-            &mut visitor,
-            context.allocator,
-            program,
-            std::mem::take(&mut context.scoping),
-            (),
-        );
-
-        visitor.changed
     }
 }
 
@@ -353,6 +313,21 @@ impl<'t> DispatchVisitor<'t> {
         }
     }
 
+    /// Dispatch a statement list to all interested transformers.
+    fn dispatch_enter_statements<'a>(
+        &mut self,
+        statements: &mut ArenaVec<'a, Statement<'a>>,
+        context: &mut TraverseCtx<'a, ()>,
+    ) {
+        for &index in self.dispatch.get(AstNodeType::StatementList) {
+            self.diagnostics.record_visit(index);
+            if self.transformers[index].enter_statements(statements, context) {
+                self.diagnostics.record_modification(index);
+                self.changed = true;
+            }
+        }
+    }
+
     /// Classify an expression into its `AstNodeType`.
     fn classify_expression(expression: &Expression<'_>) -> Option<AstNodeType> {
         match expression {
@@ -436,6 +411,14 @@ impl<'t> Traverse<'_, ()> for DispatchVisitor<'t> {
         if let Some(node_type) = Self::classify_statement(statement) {
             self.dispatch_exit_statement(node_type, statement, context);
         }
+    }
+
+    fn enter_statements<'a>(
+        &mut self,
+        statements: &mut ArenaVec<'a, Statement<'a>>,
+        context: &mut TraverseCtx<'a, ()>,
+    ) {
+        self.dispatch_enter_statements(statements, context);
     }
 }
 

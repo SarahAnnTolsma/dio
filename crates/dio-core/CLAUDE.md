@@ -9,7 +9,7 @@ All deobfuscation logic lives here. The other crates (cli, ffi, napi, wasm) are 
 - `AstNodeType` — Enum of specific AST node types transformers can register interest in.
 - `TransformerPriority` — `First` / `Default` / `Last` execution ordering.
 - `TransformerPhase` — `Main` (convergence loop) or `Finalize` (post-convergence pruning).
-- `TransformContext` — Wraps the oxc allocator and scoping info passed to transformers.
+- `operations` — Scope-aware AST mutation functions (`replace_expression`, `replace_statement`, `remove_statement`, `rename_binding`, etc.). Transformers must use these instead of direct assignment.
 - `TransformDiagnostics` — Stats reported after deobfuscation (iterations, per-transformer counts).
 
 ## Modules
@@ -20,6 +20,8 @@ All deobfuscation logic lives here. The other crates (cli, ffi, napi, wasm) are 
 ## oxc Integration Notes
 
 - oxc uses an arena allocator (`oxc_allocator::Allocator`). All AST nodes live in the arena.
-- `oxc_traverse::traverse_mut` consumes and returns `Scoping` — use `std::mem::take` to move it in/out.
-- New AST nodes are created via `AstBuilder` (from `TraverseCtx::ast()`), allocated in the arena.
+- `oxc_traverse::traverse_mut` consumes and returns `Scoping` — the deobfuscator builds it once at startup and passes it through all traversals.
+- New AST nodes are created via `AstBuilder` (from `TraverseCtx::ast`), allocated in the arena.
 - The `Traverse` trait has `enter_*`/`exit_*` methods for each AST node type.
+- Scoping is kept in sync by the `operations` module — there is no between-pass semantic rebuild.
+- Transformers must never directly assign to `*expression` or `*statement`; use `operations::replace_expression`, `operations::replace_statement`, etc.

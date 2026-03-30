@@ -1,5 +1,6 @@
 //! Defines the `Transformer` trait and supporting types for AST-based deobfuscation passes.
 
+use oxc_allocator::Vec as ArenaVec;
 use oxc_ast::ast::{Expression, Statement};
 use oxc_traverse::TraverseCtx;
 
@@ -39,6 +40,11 @@ pub enum AstNodeType {
     ForStatement,
     WhileStatement,
     SwitchStatement,
+
+    // -- Statement lists --
+    /// Interest in statement lists (block bodies, program bodies, switch cases, etc.).
+    /// Transformers registering for this receive `enter_statements` calls.
+    StatementList,
 }
 
 /// Execution priority for transformers within the convergence loop.
@@ -144,6 +150,21 @@ pub trait Transformer: Send + Sync {
     fn exit_statement<'a>(
         &self,
         _statement: &mut Statement<'a>,
+        _context: &mut TraverseCtx<'a, ()>,
+    ) -> bool {
+        false
+    }
+
+    /// Called when entering a statement list (block body, program body, etc.).
+    ///
+    /// Gives transformers access to the full `Vec<Statement>` for one-to-many
+    /// operations like splicing or filtering. Requires registering interest in
+    /// `AstNodeType::StatementList`.
+    ///
+    /// Return `true` if any statements were added, removed, or replaced.
+    fn enter_statements<'a>(
+        &self,
+        _statements: &mut ArenaVec<'a, Statement<'a>>,
         _context: &mut TraverseCtx<'a, ()>,
     ) -> bool {
         false

@@ -7,6 +7,7 @@ use oxc_span::SPAN;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_traverse::TraverseCtx;
 
+use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
 /// Concatenates chains of string literal additions into a single string.
@@ -50,7 +51,8 @@ impl Transformer for StringConcatenationTransformer {
         {
             let concatenated: String = parts.join("");
             let value = context.ast.atom(&concatenated);
-            *expression = context.ast.expression_string_literal(SPAN, value, None);
+            let replacement = context.ast.expression_string_literal(SPAN, value, None);
+            operations::replace_expression(expression, replacement, context);
             return true;
         }
 

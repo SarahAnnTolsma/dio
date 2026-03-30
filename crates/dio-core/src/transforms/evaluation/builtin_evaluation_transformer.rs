@@ -12,6 +12,7 @@ use oxc_span::SPAN;
 use oxc_syntax::number::NumberBase;
 use oxc_traverse::TraverseCtx;
 
+use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
 /// Evaluates known built-in function calls with constant arguments.
@@ -100,7 +101,8 @@ fn try_evaluate_from_char_code<'a>(
 
     let result: String = chars.into_iter().collect();
     let value = context.ast.atom(&result);
-    *expression = context.ast.expression_string_literal(SPAN, value, None);
+    let replacement = context.ast.expression_string_literal(SPAN, value, None);
+    operations::replace_expression(expression, replacement, context);
     true
 }
 
@@ -147,10 +149,11 @@ fn try_evaluate_parse_int<'a>(
 
     let result_f64 = result as f64;
     let raw = context.ast.atom(&result.to_string());
-    *expression =
+    let replacement =
         context
             .ast
             .expression_numeric_literal(SPAN, result_f64, Some(raw), NumberBase::Decimal);
+    operations::replace_expression(expression, replacement, context);
     true
 }
 
@@ -211,10 +214,11 @@ fn try_evaluate_parse_float<'a>(
     }
 
     let raw = context.ast.atom(&result.to_string());
-    *expression =
+    let replacement =
         context
             .ast
             .expression_numeric_literal(SPAN, result, Some(raw), NumberBase::Decimal);
+    operations::replace_expression(expression, replacement, context);
     true
 }
 
@@ -244,7 +248,8 @@ fn try_evaluate_atob<'a>(
 
     let result: String = decoded_bytes.iter().map(|&byte| byte as char).collect();
     let value = context.ast.atom(&result);
-    *expression = context.ast.expression_string_literal(SPAN, value, None);
+    let replacement = context.ast.expression_string_literal(SPAN, value, None);
+    operations::replace_expression(expression, replacement, context);
     true
 }
 
@@ -276,7 +281,8 @@ fn try_evaluate_btoa<'a>(
     let bytes: Vec<u8> = input.bytes().collect();
     let encoded = base64_encode(&bytes);
     let value = context.ast.atom(&encoded);
-    *expression = context.ast.expression_string_literal(SPAN, value, None);
+    let replacement = context.ast.expression_string_literal(SPAN, value, None);
+    operations::replace_expression(expression, replacement, context);
     true
 }
 

@@ -6,6 +6,7 @@
 use oxc_ast::ast::Expression;
 use oxc_traverse::TraverseCtx;
 
+use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
 /// Simplifies sequence (comma) expressions by removing side-effect-free leading expressions.
@@ -31,7 +32,7 @@ impl Transformer for CommaTransformer {
     fn enter_expression<'a>(
         &self,
         expression: &mut Expression<'a>,
-        _context: &mut TraverseCtx<'a, ()>,
+        context: &mut TraverseCtx<'a, ()>,
     ) -> bool {
         let Expression::SequenceExpression(sequence) = expression else {
             return false;
@@ -52,7 +53,7 @@ impl Transformer for CommaTransformer {
 
         // Replace the entire sequence with just the last expression.
         let last = sequence.expressions.pop().unwrap();
-        *expression = last;
+        operations::replace_expression(expression, last, context);
         true
     }
 }

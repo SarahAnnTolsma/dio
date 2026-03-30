@@ -8,6 +8,7 @@ use oxc_ast::ast::{Expression, Statement};
 use oxc_span::SPAN;
 use oxc_traverse::TraverseCtx;
 
+use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
 /// Simplifies control flow when conditions are constant boolean values.
@@ -48,13 +49,13 @@ impl Transformer for ControlFlowTransformer {
                 &mut conditional.consequent,
                 context.ast.expression_null_literal(SPAN),
             );
-            *expression = consequent;
+            operations::replace_expression(expression, consequent, context);
         } else {
             let alternate = std::mem::replace(
                 &mut conditional.alternate,
                 context.ast.expression_null_literal(SPAN),
             );
-            *expression = alternate;
+            operations::replace_expression(expression, alternate, context);
         }
 
         true
@@ -78,20 +79,37 @@ impl Transformer for ControlFlowTransformer {
                 &mut if_statement.consequent,
                 context.ast.statement_empty(SPAN),
             );
-            *statement = consequent;
+            let unwrapped = unwrap_single_statement_block(consequent);
+            operations::replace_statement(statement, unwrapped, context);
         } else if let Some(alternate) = &mut if_statement.alternate {
             let alternate = std::mem::replace(alternate, context.ast.statement_empty(SPAN));
-            *statement = alternate;
+            let unwrapped = unwrap_single_statement_block(alternate);
+            operations::replace_statement(statement, unwrapped, context);
         } else {
-            *statement = context.ast.statement_empty(SPAN);
+            operations::remove_statement(statement, context);
         }
 
         true
     }
 }
 
+/// Unwrap a block statement containing a single statement to just that statement.
+/// `{ x = 1; }` -> `x = 1;`
+fn unwrap_single_statement_block<'a>(statement: Statement<'a>) -> Statement<'a> {
+    if let Statement::BlockStatement(mut block) = statement {
+        if block.body.len() == 1 {
+            return block.body.pop().unwrap();
+        }
+        Statement::BlockStatement(block)
+    } else {
+        statement
+    }
+}
+
 /// Try to evaluate an expression as a known boolean value.
+/// Looks through parenthesized expressions.
 fn evaluate_as_boolean(expression: &Expression<'_>) -> Option<bool> {
+    let expression = unwrap_parens(expression);
     match expression {
         Expression::BooleanLiteral(boolean) => Some(boolean.value),
         Expression::NumericLiteral(number) => Some(number.value != 0.0 && !number.value.is_nan()),
@@ -99,4 +117,13 @@ fn evaluate_as_boolean(expression: &Expression<'_>) -> Option<bool> {
         Expression::NullLiteral(_) => Some(false),
         _ => None,
     }
+}
+
+/// Unwrap parenthesized expressions to get the inner expression.
+fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
+    let mut current = expression;
+    while let Expression::ParenthesizedExpression(paren) = current {
+        current = &paren.expression;
+    }
+    current
 }

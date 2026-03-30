@@ -6,6 +6,7 @@ use oxc_ast::ast::Expression;
 use oxc_span::SPAN;
 use oxc_traverse::TraverseCtx;
 
+use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
 /// Converts computed member expressions with string literal keys to dot notation.
@@ -60,7 +61,8 @@ impl Transformer for MemberTransformer {
             context
                 .ast
                 .alloc_static_member_expression(SPAN, object, property_identifier, optional);
-        *expression = Expression::StaticMemberExpression(static_member);
+        let replacement = Expression::StaticMemberExpression(static_member);
+        operations::replace_expression(expression, replacement, context);
         true
     }
 }

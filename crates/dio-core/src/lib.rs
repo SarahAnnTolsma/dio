@@ -30,9 +30,9 @@
 //! deobfuscator.add_transformer(Box::new(MyTransformer));
 //! ```
 
-pub mod context;
 pub mod deobfuscator;
 pub mod diagnostics;
+pub mod operations;
 pub mod pattern;
 pub mod transformer;
 pub mod transforms;

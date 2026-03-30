@@ -12,6 +12,7 @@ use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
 use oxc_traverse::TraverseCtx;
 
+use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
 /// Folds constant binary and unary expressions into their computed values.
@@ -61,6 +62,15 @@ fn make_string_literal<'a>(context: &TraverseCtx<'a, ()>, value: &str) -> Expres
     context.ast.expression_string_literal(SPAN, atom, None)
 }
 
+/// Unwrap parenthesized expressions to get the inner expression.
+fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
+    let mut current = expression;
+    while let Expression::ParenthesizedExpression(paren) = current {
+        current = &paren.expression;
+    }
+    current
+}
+
 /// Try to fold a binary expression with two literal operands.
 fn try_fold_binary_expression<'a>(
     expression: &mut Expression<'a>,
@@ -70,9 +80,9 @@ fn try_fold_binary_expression<'a>(
         return false;
     };
 
-    // Try numeric folding: both sides are numeric literals.
+    // Try numeric folding: both sides are numeric literals (looking through parens).
     if let (Expression::NumericLiteral(left), Expression::NumericLiteral(right)) =
-        (&binary.left, &binary.right)
+        (unwrap_parens(&binary.left), unwrap_parens(&binary.right))
     {
         let left_value = left.value;
         let right_value = right.value;
@@ -88,7 +98,8 @@ fn try_fold_binary_expression<'a>(
         };
 
         if let Some(result_value) = result {
-            *expression = make_numeric_literal(context, result_value);
+            let replacement = make_numeric_literal(context, result_value);
+            operations::replace_expression(expression, replacement, context);
             return true;
         }
 
@@ -106,7 +117,8 @@ fn try_fold_binary_expression<'a>(
         };
 
         if let Some(result_value) = comparison_result {
-            *expression = context.ast.expression_boolean_literal(SPAN, result_value);
+            let replacement = context.ast.expression_boolean_literal(SPAN, result_value);
+            operations::replace_expression(expression, replacement, context);
             return true;
         }
 
@@ -129,19 +141,21 @@ fn try_fold_binary_expression<'a>(
         };
 
         if let Some(result_value) = bitwise_result {
-            *expression = make_numeric_literal(context, f64::from(result_value));
+            let replacement = make_numeric_literal(context, f64::from(result_value));
+            operations::replace_expression(expression, replacement, context);
             return true;
         }
     }
 
-    // Try string concatenation: both sides are string literals.
+    // Try string concatenation: both sides are string literals (looking through parens).
     if binary.operator == BinaryOperator::Addition {
         if let (Expression::StringLiteral(left), Expression::StringLiteral(right)) =
-            (&binary.left, &binary.right)
+            (unwrap_parens(&binary.left), unwrap_parens(&binary.right))
         {
             let mut concatenated = left.value.to_string();
             concatenated.push_str(&right.value);
-            *expression = make_string_literal(context, &concatenated);
+            let replacement = make_string_literal(context, &concatenated);
+            operations::replace_expression(expression, replacement, context);
             return true;
         }
     }
@@ -162,19 +176,22 @@ fn try_fold_unary_expression<'a>(
         UnaryOperator::LogicalNot => {
             if let Expression::BooleanLiteral(boolean) = &unary.argument {
                 let negated = !boolean.value;
-                *expression = context.ast.expression_boolean_literal(SPAN, negated);
+                let replacement = context.ast.expression_boolean_literal(SPAN, negated);
+                operations::replace_expression(expression, replacement, context);
                 return true;
             }
         }
         UnaryOperator::UnaryNegation => {
             if let Expression::NumericLiteral(number) = &unary.argument {
-                *expression = make_numeric_literal(context, -number.value);
+                let replacement = make_numeric_literal(context, -number.value);
+                operations::replace_expression(expression, replacement, context);
                 return true;
             }
         }
         UnaryOperator::UnaryPlus => {
             if let Expression::NumericLiteral(number) = &unary.argument {
-                *expression = make_numeric_literal(context, number.value);
+                let replacement = make_numeric_literal(context, number.value);
+                operations::replace_expression(expression, replacement, context);
                 return true;
             }
         }
@@ -191,14 +208,33 @@ fn try_fold_unary_expression<'a>(
             };
 
             if let Some(type_name) = type_name {
-                *expression = make_string_literal(context, type_name);
+                let replacement = make_string_literal(context, type_name);
+                operations::replace_expression(expression, replacement, context);
+                return true;
+            }
+        }
+        UnaryOperator::Void => {
+            // `void <expr>` always evaluates to `undefined` when the argument is
+            // side-effect-free. For safety we only fold `void <literal>`.
+            let argument = unwrap_parens(&unary.argument);
+            if matches!(
+                argument,
+                Expression::NumericLiteral(_)
+                    | Expression::StringLiteral(_)
+                    | Expression::BooleanLiteral(_)
+                    | Expression::NullLiteral(_)
+            ) {
+                let atom = context.ast.atom("undefined");
+                let replacement = context.ast.expression_identifier(SPAN, atom);
+                operations::replace_expression(expression, replacement, context);
                 return true;
             }
         }
         UnaryOperator::BitwiseNot => {
             if let Expression::NumericLiteral(number) = &unary.argument {
                 let result = !(number.value as i32);
-                *expression = make_numeric_literal(context, f64::from(result));
+                let replacement = make_numeric_literal(context, f64::from(result));
+                operations::replace_expression(expression, replacement, context);
                 return true;
             }
         }
