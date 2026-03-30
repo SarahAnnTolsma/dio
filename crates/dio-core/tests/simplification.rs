@@ -10,14 +10,14 @@ use common::deobfuscate;
 
 #[test]
 fn block_normalization_if() {
-    assert_eq!(deobfuscate("if (x) foo();"), "if (x) {\n\tfoo();\n}");
+    assert_eq!(deobfuscate("if (x) foo();"), "if (x) {\n    foo();\n}");
 }
 
 #[test]
 fn block_normalization_if_else() {
     assert_eq!(
         deobfuscate("if (x) foo(); else bar();"),
-        "if (x) {\n\tfoo();\n} else {\n\tbar();\n}"
+        "if (x) {\n    foo();\n} else {\n    bar();\n}"
     );
 }
 
@@ -25,20 +25,20 @@ fn block_normalization_if_else() {
 fn block_normalization_else_if_preserved() {
     assert_eq!(
         deobfuscate("if (x) foo(); else if (y) bar();"),
-        "if (x) {\n\tfoo();\n} else if (y) {\n\tbar();\n}"
+        "if (x) {\n    foo();\n} else if (y) {\n    bar();\n}"
     );
 }
 
 #[test]
 fn block_normalization_while() {
-    assert_eq!(deobfuscate("while (x) foo();"), "while (x) {\n\tfoo();\n}");
+    assert_eq!(deobfuscate("while (x) foo();"), "while (x) {\n    foo();\n}");
 }
 
 #[test]
 fn block_normalization_for() {
     assert_eq!(
         deobfuscate("for (var i = 0; i < 10; i++) foo();"),
-        "for (var i = 0; i < 10; i++) {\n\tfoo();\n}"
+        "for (var i = 0; i < 10; i++) {\n    foo();\n}"
     );
 }
 
@@ -46,7 +46,7 @@ fn block_normalization_for() {
 fn block_normalization_do_while() {
     assert_eq!(
         deobfuscate("do foo(); while (x);"),
-        "do {\n\tfoo();\n} while (x);"
+        "do {\n    foo();\n} while (x);"
     );
 }
 
@@ -54,7 +54,7 @@ fn block_normalization_do_while() {
 fn block_normalization_for_in() {
     assert_eq!(
         deobfuscate("for (var k in obj) foo();"),
-        "for (var k in obj) {\n\tfoo();\n}"
+        "for (var k in obj) {\n    foo();\n}"
     );
 }
 
@@ -62,7 +62,7 @@ fn block_normalization_for_in() {
 fn block_normalization_for_of() {
     assert_eq!(
         deobfuscate("for (var v of arr) foo();"),
-        "for (var v of arr) {\n\tfoo();\n}"
+        "for (var v of arr) {\n    foo();\n}"
     );
 }
 
@@ -70,7 +70,7 @@ fn block_normalization_for_of() {
 fn block_normalization_already_blocked() {
     assert_eq!(
         deobfuscate("if (x) { foo(); } else { bar(); }"),
-        "if (x) {\n\tfoo();\n} else {\n\tbar();\n}"
+        "if (x) {\n    foo();\n} else {\n    bar();\n}"
     );
 }
 
@@ -82,7 +82,7 @@ fn block_normalization_already_blocked() {
 fn ternary_to_if_simple() {
     assert_eq!(
         deobfuscate("x ? y() : z();"),
-        "if (x) {\n\ty();\n} else {\n\tz();\n}"
+        "if (x) {\n    y();\n} else {\n    z();\n}"
     );
 }
 
@@ -90,7 +90,7 @@ fn ternary_to_if_simple() {
 fn ternary_to_if_assignments() {
     assert_eq!(
         deobfuscate("condition ? a = 1 : a = 2;"),
-        "if (condition) {\n\ta = 1;\n} else {\n\ta = 2;\n}"
+        "if (condition) {\n    a = 1;\n} else {\n    a = 2;\n}"
     );
 }
 
@@ -110,12 +110,12 @@ fn ternary_to_if_with_constant_condition() {
 
 #[test]
 fn logical_and_to_if() {
-    assert_eq!(deobfuscate("x && y();"), "if (x) {\n\ty();\n}");
+    assert_eq!(deobfuscate("x && y();"), "if (x) {\n    y();\n}");
 }
 
 #[test]
 fn logical_or_to_if() {
-    assert_eq!(deobfuscate("x || y();"), "if (!x) {\n\ty();\n}");
+    assert_eq!(deobfuscate("x || y();"), "if (!x) {\n    y();\n}");
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn comma_nested() {
 fn sequence_return() {
     assert_eq!(
         deobfuscate("function f() { return (a(), b(), c()); }"),
-        "function f() {\n\ta();\n\tb();\n\treturn c();\n}"
+        "function f() {\n    a();\n    b();\n    return c();\n}"
     );
 }
 
@@ -168,7 +168,7 @@ fn sequence_return() {
 fn sequence_return_two() {
     assert_eq!(
         deobfuscate("function f() { return (a(), b()); }"),
-        "function f() {\n\ta();\n\treturn b();\n}"
+        "function f() {\n    a();\n    return b();\n}"
     );
 }
 
@@ -176,7 +176,7 @@ fn sequence_return_two() {
 fn sequence_if() {
     assert_eq!(
         deobfuscate("if (a(), b(), c) { x(); }"),
-        "a();\nb();\nif (c) {\n\tx();\n}"
+        "a();\nb();\nif (c) {\n    x();\n}"
     );
 }
 
@@ -184,7 +184,7 @@ fn sequence_if() {
 fn sequence_if_else() {
     assert_eq!(
         deobfuscate("if (a(), b()) { x(); } else { y(); }"),
-        "a();\nif (b()) {\n\tx();\n} else {\n\ty();\n}"
+        "a();\nif (b()) {\n    x();\n} else {\n    y();\n}"
     );
 }
 
@@ -192,7 +192,7 @@ fn sequence_if_else() {
 fn sequence_return_single_not_affected() {
     assert_eq!(
         deobfuscate("function f() { return x(); }"),
-        "function f() {\n\treturn x();\n}"
+        "function f() {\n    return x();\n}"
     );
 }
 
@@ -200,7 +200,7 @@ fn sequence_return_single_not_affected() {
 fn sequence_while() {
     assert_eq!(
         deobfuscate("while ((a(), b(), c)) { x(); }"),
-        "a();\nb();\nwhile (c) {\n\tx();\n}"
+        "a();\nb();\nwhile (c) {\n    x();\n}"
     );
 }
 
@@ -216,7 +216,7 @@ fn sequence_throw() {
 fn sequence_switch() {
     assert_eq!(
         deobfuscate("switch ((a(), b(), x)) { case 1: break; }"),
-        "a();\nb();\nswitch (x) {\n\tcase 1: break;\n}"
+        "a();\nb();\nswitch (x) {\n    case 1: break;\n}"
     );
 }
 
@@ -224,7 +224,7 @@ fn sequence_switch() {
 fn sequence_for_test() {
     assert_eq!(
         deobfuscate("for (; (a(), b(), c); ) { x(); }"),
-        "a();\nb();\nfor (; c;) {\n\tx();\n}"
+        "a();\nb();\nfor (; c;) {\n    x();\n}"
     );
 }
 

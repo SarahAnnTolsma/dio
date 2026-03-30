@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use oxc_allocator::{Allocator, Vec as ArenaVec};
 use oxc_ast::ast::{Expression, Statement};
-use oxc_codegen::{Codegen, CodegenOptions};
+use oxc_codegen::{Codegen, CodegenOptions, IndentChar};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
@@ -48,7 +48,7 @@ impl Deobfuscator {
             transformers: transforms::default_transformers(),
             max_iterations: 100,
             diagnostics_callback: None,
-            codegen_options: CodegenOptions::default(),
+            codegen_options: Self::default_codegen_options(),
         }
     }
 
@@ -59,7 +59,16 @@ impl Deobfuscator {
             transformers: Vec::new(),
             max_iterations: 100,
             diagnostics_callback: None,
-            codegen_options: CodegenOptions::default(),
+            codegen_options: Self::default_codegen_options(),
+        }
+    }
+
+    /// Default code generation options: 4-space indentation.
+    fn default_codegen_options() -> CodegenOptions {
+        CodegenOptions {
+            indent_char: IndentChar::Space,
+            indent_width: 4,
+            ..CodegenOptions::default()
         }
     }
 

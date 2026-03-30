@@ -172,7 +172,7 @@ fn skip_function_with_multiple_statements() {
         deobfuscate(
             "function f(a, b) { console.log(a); return a + b; } var x = f(1, 2);"
         ),
-        "function f(a, b) {\n\tconsole.log(a);\n\treturn a + b;\n}\nvar x = f(1, 2);"
+        "function f(a, b) {\n    console.log(a);\n    return a + b;\n}\nvar x = f(1, 2);"
     );
 }
 
@@ -181,6 +181,6 @@ fn skip_function_with_free_variables() {
     // The return expression references `c` which is not a parameter.
     assert_eq!(
         deobfuscate("var c = 10; function f(a, b) { return a + c; } var x = f(1, 2);"),
-        "function f(a, b) {\n\treturn a + 10;\n}\nvar x = f(1, 2);"
+        "function f(a, b) {\n    return a + 10;\n}\nvar x = f(1, 2);"
     );
 }

@@ -7,7 +7,7 @@ use common::deobfuscate;
 fn after_return() {
     assert_eq!(
         deobfuscate("function f() { return 1; var x = 2; x + 3; }"),
-        "function f() {\n\treturn 1;\n}"
+        "function f() {\n    return 1;\n}"
     );
 }
 
@@ -15,7 +15,7 @@ fn after_return() {
 fn after_throw() {
     assert_eq!(
         deobfuscate("function f() { throw new Error(); var x = 2; }"),
-        "function f() {\n\tthrow new Error();\n}"
+        "function f() {\n    throw new Error();\n}"
     );
 }
 
@@ -23,6 +23,6 @@ fn after_throw() {
 fn combined_with_constant_if() {
     assert_eq!(
         deobfuscate("function f() { if (true) { return 1; } else { return 2; } var x = 3; }"),
-        "function f() {\n\treturn 1;\n}"
+        "function f() {\n    return 1;\n}"
     );
 }
