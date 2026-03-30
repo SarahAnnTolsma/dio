@@ -38,7 +38,10 @@ pub enum AstNodeType {
     ReturnStatement,
     VariableDeclaration,
     ForStatement,
+    ForInStatement,
+    ForOfStatement,
     WhileStatement,
+    DoWhileStatement,
     SwitchStatement,
 
     // -- Statement lists --

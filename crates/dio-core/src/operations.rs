@@ -11,6 +11,7 @@ use oxc_ast::ast::{Expression, IdentifierReference, Statement};
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{Ident, SPAN};
 use oxc_syntax::reference::ReferenceId;
+use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 use oxc_traverse::TraverseCtx;
 
@@ -216,6 +217,25 @@ pub fn replace_expression_with_sequence<'a>(
     }
     *target = context.ast.expression_sequence(SPAN, expressions);
     delete_orphaned_references(&old_references, &new_references, context);
+}
+
+// ---------------------------------------------------------------------------
+// AST node creation helpers
+// ---------------------------------------------------------------------------
+
+/// Create a `BlockStatement` with a properly registered child scope.
+///
+/// This is the correct way to create block statements during traversal.
+/// Using `context.ast.statement_block()` without a scope ID will cause oxc's
+/// traversal to panic.
+pub fn create_block_statement<'a>(
+    body: ArenaVec<'a, Statement<'a>>,
+    context: &mut TraverseCtx<'a, ()>,
+) -> Statement<'a> {
+    let scope_id = context.create_child_scope_of_current(ScopeFlags::empty());
+    context
+        .ast
+        .statement_block_with_scope_id(SPAN, body, scope_id)
 }
 
 // ---------------------------------------------------------------------------

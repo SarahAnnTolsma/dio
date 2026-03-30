@@ -2,8 +2,10 @@
 //!
 //! Supported functions:
 //! - `String.fromCharCode(72, 101, 108)` -> `"Hel"`
-//! - `parseInt("1a", 16)` -> `26`
-//! - `parseFloat("3.14")` -> `3.14`
+//! - `parseInt("1a", 16)` / `Number.parseInt("1a", 16)` -> `26`
+//! - `parseFloat("3.14")` / `Number.parseFloat("3.14")` -> `3.14`
+//! - `Number("42")` / `Number(true)` -> `42` / `1`
+//! - `Boolean(1)` / `Boolean("")` -> `true` / `false`
 //! - `atob("aGVsbG8=")` -> `"hello"`
 //! - `btoa("hello")` -> `"aGVsbG8="`
 
@@ -44,9 +46,15 @@ impl Transformer for BuiltinEvaluationTransformer {
             return false;
         };
 
-        // Check for String.fromCharCode(...numbers).
+        // Check for static member calls: String.fromCharCode, Number.parseInt, Number.parseFloat.
         if is_static_member_call(&call.callee, "String", "fromCharCode") {
             return try_evaluate_from_char_code(expression, context);
+        }
+        if is_static_member_call(&call.callee, "Number", "parseInt") {
+            return try_evaluate_parse_int(expression, context);
+        }
+        if is_static_member_call(&call.callee, "Number", "parseFloat") {
+            return try_evaluate_parse_float(expression, context);
         }
 
         // Check for global function calls.
@@ -54,6 +62,8 @@ impl Transformer for BuiltinEvaluationTransformer {
             match identifier.name.as_str() {
                 "parseInt" => return try_evaluate_parse_int(expression, context),
                 "parseFloat" => return try_evaluate_parse_float(expression, context),
+                "Number" => return try_evaluate_number(expression, context),
+                "Boolean" => return try_evaluate_boolean(expression, context),
                 "atob" => return try_evaluate_atob(expression, context),
                 "btoa" => return try_evaluate_btoa(expression, context),
                 _ => {}
@@ -284,6 +294,98 @@ fn try_evaluate_btoa<'a>(
     let replacement = context.ast.expression_string_literal(SPAN, value, None);
     operations::replace_expression(expression, replacement, context);
     true
+}
+
+/// `Number("42")` -> `42`, `Number(true)` -> `1`, `Number(false)` -> `0`, `Number(null)` -> `0`
+fn try_evaluate_number<'a>(
+    expression: &mut Expression<'a>,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    let Expression::CallExpression(call) = expression else {
+        return false;
+    };
+
+    if call.arguments.len() != 1 {
+        return false;
+    }
+
+    let Some(argument) = call.arguments[0].as_expression() else {
+        return false;
+    };
+
+    let result = match argument {
+        Expression::StringLiteral(string) => {
+            let trimmed = string.value.as_str().trim();
+            if trimmed.is_empty() {
+                0.0
+            } else {
+                let Ok(value) = trimmed.parse::<f64>() else {
+                    return false;
+                };
+                if !value.is_finite() {
+                    return false;
+                }
+                value
+            }
+        }
+        Expression::NumericLiteral(number) => number.value,
+        Expression::BooleanLiteral(boolean) => {
+            if boolean.value {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Expression::NullLiteral(_) => 0.0,
+        _ => return false,
+    };
+
+    let raw = context.ast.atom(&format_number(result));
+    let replacement =
+        context
+            .ast
+            .expression_numeric_literal(SPAN, result, Some(raw), NumberBase::Decimal);
+    operations::replace_expression(expression, replacement, context);
+    true
+}
+
+/// `Boolean(1)` -> `true`, `Boolean(0)` -> `false`, `Boolean("")` -> `false`, etc.
+fn try_evaluate_boolean<'a>(
+    expression: &mut Expression<'a>,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    let Expression::CallExpression(call) = expression else {
+        return false;
+    };
+
+    if call.arguments.len() != 1 {
+        return false;
+    }
+
+    let Some(argument) = call.arguments[0].as_expression() else {
+        return false;
+    };
+
+    let result = match argument {
+        Expression::NumericLiteral(number) => number.value != 0.0 && !number.value.is_nan(),
+        Expression::StringLiteral(string) => !string.value.is_empty(),
+        Expression::BooleanLiteral(boolean) => boolean.value,
+        Expression::NullLiteral(_) => false,
+        _ => return false,
+    };
+
+    let replacement = context.ast.expression_boolean_literal(SPAN, result);
+    operations::replace_expression(expression, replacement, context);
+    true
+}
+
+/// Format a number for the raw literal string, omitting `.0` for integers.
+fn format_number(value: f64) -> String {
+    if value.fract() == 0.0 && value.abs() < (i64::MAX as f64) {
+        format!("{}", value as i64)
+    } else {
+        value.to_string()
+    }
 }
 
 // -- Minimal base64 implementation to avoid adding a dependency --

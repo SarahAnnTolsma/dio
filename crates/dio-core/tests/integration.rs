@@ -114,6 +114,94 @@ fn builtin_eval_parse_float() {
     );
 }
 
+// Number.parseInt / Number.parseFloat
+
+#[test]
+fn builtin_eval_number_parse_int() {
+    assert_eq!(
+        deobfuscate("var x = Number.parseInt(\"10\");"),
+        "var x = 10;"
+    );
+}
+
+#[test]
+fn builtin_eval_number_parse_int_hex() {
+    assert_eq!(
+        deobfuscate("var x = Number.parseInt(\"ff\", 16);"),
+        "var x = 255;"
+    );
+}
+
+#[test]
+fn builtin_eval_number_parse_float() {
+    assert_eq!(
+        deobfuscate("var x = Number.parseFloat(\"3.14\");"),
+        "var x = 3.14;"
+    );
+}
+
+// Number() type coercion
+
+#[test]
+fn builtin_eval_number_from_string() {
+    assert_eq!(deobfuscate("var x = Number(\"42\");"), "var x = 42;");
+}
+
+#[test]
+fn builtin_eval_number_from_float_string() {
+    assert_eq!(deobfuscate("var x = Number(\"3.14\");"), "var x = 3.14;");
+}
+
+#[test]
+fn builtin_eval_number_from_empty_string() {
+    assert_eq!(deobfuscate("var x = Number(\"\");"), "var x = 0;");
+}
+
+#[test]
+fn builtin_eval_number_from_true() {
+    assert_eq!(deobfuscate("var x = Number(true);"), "var x = 1;");
+}
+
+#[test]
+fn builtin_eval_number_from_false() {
+    assert_eq!(deobfuscate("var x = Number(false);"), "var x = 0;");
+}
+
+#[test]
+fn builtin_eval_number_from_null() {
+    assert_eq!(deobfuscate("var x = Number(null);"), "var x = 0;");
+}
+
+// Boolean() type coercion
+
+#[test]
+fn builtin_eval_boolean_from_number_truthy() {
+    assert_eq!(deobfuscate("var x = Boolean(1);"), "var x = true;");
+}
+
+#[test]
+fn builtin_eval_boolean_from_number_falsy() {
+    assert_eq!(deobfuscate("var x = Boolean(0);"), "var x = false;");
+}
+
+#[test]
+fn builtin_eval_boolean_from_string_truthy() {
+    assert_eq!(
+        deobfuscate("var x = Boolean(\"hello\");"),
+        "var x = true;"
+    );
+}
+
+#[test]
+fn builtin_eval_boolean_from_string_falsy() {
+    assert_eq!(deobfuscate("var x = Boolean(\"\");"), "var x = false;");
+}
+
+#[test]
+fn builtin_eval_boolean_from_null() {
+    assert_eq!(deobfuscate("var x = Boolean(null);"), "var x = false;");
+}
+
 #[test]
 fn builtin_eval_atob() {
     assert_eq!(
@@ -205,6 +293,123 @@ fn control_flow_ternary_null_falsy() {
 }
 
 // ---------------------------------------------------------------------------
+// Block normalization (bare statements -> block statements)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn block_normalization_if() {
+    assert_eq!(
+        deobfuscate("if (x) foo();"),
+        "if (x) {\n\tfoo();\n}"
+    );
+}
+
+#[test]
+fn block_normalization_if_else() {
+    assert_eq!(
+        deobfuscate("if (x) foo(); else bar();"),
+        "if (x) {\n\tfoo();\n} else {\n\tbar();\n}"
+    );
+}
+
+#[test]
+fn block_normalization_else_if_preserved() {
+    // `else if` should NOT be wrapped — it's idiomatic.
+    assert_eq!(
+        deobfuscate("if (x) foo(); else if (y) bar();"),
+        "if (x) {\n\tfoo();\n} else if (y) {\n\tbar();\n}"
+    );
+}
+
+#[test]
+fn block_normalization_while() {
+    assert_eq!(
+        deobfuscate("while (x) foo();"),
+        "while (x) {\n\tfoo();\n}"
+    );
+}
+
+#[test]
+fn block_normalization_for() {
+    assert_eq!(
+        deobfuscate("for (var i = 0; i < 10; i++) foo();"),
+        "for (var i = 0; i < 10; i++) {\n\tfoo();\n}"
+    );
+}
+
+#[test]
+fn block_normalization_do_while() {
+    assert_eq!(
+        deobfuscate("do foo(); while (x);"),
+        "do {\n\tfoo();\n} while (x);"
+    );
+}
+
+#[test]
+fn block_normalization_for_in() {
+    assert_eq!(
+        deobfuscate("for (var k in obj) foo();"),
+        "for (var k in obj) {\n\tfoo();\n}"
+    );
+}
+
+#[test]
+fn block_normalization_for_of() {
+    assert_eq!(
+        deobfuscate("for (var v of arr) foo();"),
+        "for (var v of arr) {\n\tfoo();\n}"
+    );
+}
+
+#[test]
+fn block_normalization_already_blocked() {
+    // Already has blocks — should pass through unchanged.
+    assert_eq!(
+        deobfuscate("if (x) { foo(); } else { bar(); }"),
+        "if (x) {\n\tfoo();\n} else {\n\tbar();\n}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Ternary-to-if conversion (standalone ternary expressions)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ternary_to_if_simple() {
+    assert_eq!(
+        deobfuscate("x ? y() : z();"),
+        "if (x) {\n\ty();\n} else {\n\tz();\n}"
+    );
+}
+
+#[test]
+fn ternary_to_if_assignments() {
+    assert_eq!(
+        deobfuscate("condition ? a = 1 : a = 2;"),
+        "if (condition) {\n\ta = 1;\n} else {\n\ta = 2;\n}"
+    );
+}
+
+#[test]
+fn ternary_to_if_does_not_affect_value_position() {
+    // Ternary used as a value should NOT be converted.
+    assert_eq!(
+        deobfuscate("var x = a ? b : c;"),
+        "var x = a ? b : c;"
+    );
+}
+
+#[test]
+fn ternary_to_if_with_constant_condition_simplifies() {
+    // Ternary with constant condition: first converts to if/else, then
+    // control flow simplifies the if(true) away.
+    assert_eq!(
+        deobfuscate("true ? y() : z();"),
+        "y();"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Comma (sequence) expression simplification
 // ---------------------------------------------------------------------------
 
@@ -217,6 +422,51 @@ fn comma_expression_simplification() {
 fn comma_expression_with_identifiers() {
     // Identifiers are considered side-effect-free by the comma transformer
     assert_eq!(deobfuscate("var a = 1; var x = (a, 2, 3);"), "var a = 1;\nvar x = 3;");
+}
+
+// ---------------------------------------------------------------------------
+// Sequence expression hoisting (return / if with comma expressions)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sequence_return_hoists_leading_expressions() {
+    assert_eq!(
+        deobfuscate("function f() { return (a(), b(), c()); }"),
+        "function f() {\n\ta();\n\tb();\n\treturn c();\n}"
+    );
+}
+
+#[test]
+fn sequence_return_two_expressions() {
+    assert_eq!(
+        deobfuscate("function f() { return (a(), b()); }"),
+        "function f() {\n\ta();\n\treturn b();\n}"
+    );
+}
+
+#[test]
+fn sequence_if_hoists_leading_expressions() {
+    assert_eq!(
+        deobfuscate("if (a(), b(), c) { x(); }"),
+        "a();\nb();\nif (c) {\n\tx();\n}"
+    );
+}
+
+#[test]
+fn sequence_if_else_hoists_leading_expressions() {
+    assert_eq!(
+        deobfuscate("if (a(), b()) { x(); } else { y(); }"),
+        "a();\nif (b()) {\n\tx();\n} else {\n\ty();\n}"
+    );
+}
+
+#[test]
+fn sequence_return_single_not_affected() {
+    // Single expression return should not be changed.
+    assert_eq!(
+        deobfuscate("function f() { return x(); }"),
+        "function f() {\n\treturn x();\n}"
+    );
 }
 
 // ---------------------------------------------------------------------------

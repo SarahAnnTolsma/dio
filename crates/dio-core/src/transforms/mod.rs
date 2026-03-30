@@ -18,12 +18,15 @@ pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
         // Main phase, First priority
         Box::new(constant::ConstantInliningTransformer),
         // Main phase, Default priority
+        Box::new(simplification::BlockNormalizationTransformer),
         Box::new(constant::ConstantFoldingTransformer),
         Box::new(string::StringConcatenationTransformer),
         Box::new(evaluation::BuiltinEvaluationTransformer),
         Box::new(simplification::CommaTransformer),
         Box::new(simplification::MemberTransformer),
         Box::new(simplification::ControlFlowTransformer),
+        Box::new(simplification::TernaryToIfTransformer),
+        Box::new(simplification::SequenceStatementTransformer),
         // Finalize phase
         Box::new(elimination::DeadCodeTransformer),
         Box::new(renaming::VariableRenamingTransformer),
