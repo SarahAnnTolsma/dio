@@ -523,8 +523,9 @@ fn find_and_eval_checksum_in_body(
 
 /// Recursively evaluate a checksum expression given the current array state.
 ///
-/// Handles: numeric literals, unary negation, binary +/-/*, division,
-/// `parseInt(decoder(HEX))` calls, and parenthesized expressions.
+/// Uses the shared `utils::eval::try_eval` for standard sub-expressions and
+/// adds a special case for `parseInt(decoder(HEX))` which simulates the
+/// decoder by looking up strings from the current array state.
 fn eval_checksum_expression(
     expression: &Expression<'_>,
     array: &[String],
@@ -532,9 +533,42 @@ fn eval_checksum_expression(
 ) -> Option<f64> {
     let expression = unwrap_parens(expression);
 
-    match expression {
-        Expression::NumericLiteral(literal) => Some(literal.value),
+    // Special case: parseInt(decoder(HEX)) — the decoder call can't be
+    // evaluated by try_eval because it depends on the array rotation state.
+    if let Expression::CallExpression(call) = expression {
+        let callee = unwrap_parens(&call.callee);
+        if let Expression::Identifier(id) = callee {
+            if id.name.as_str() == "parseInt" && !call.arguments.is_empty() {
+                if let Some(arg) = call.arguments[0].as_expression() {
+                    let arg = unwrap_parens(arg);
 
+                    // parseInt(decoder(HEX)) — simulate the decoder call.
+                    if let Expression::CallExpression(inner_call) = arg {
+                        if inner_call.arguments.len() == 1 {
+                            if let Some(inner_arg) = inner_call.arguments[0].as_expression() {
+                                if let Expression::NumericLiteral(literal) =
+                                    unwrap_parens(inner_arg)
+                                {
+                                    let raw_index = literal.value as usize;
+                                    let array_index = raw_index.checked_sub(offset)?;
+                                    if array_index >= array.len() {
+                                        return None;
+                                    }
+                                    let element = &array[array_index];
+                                    return crate::utils::eval::js_parse_int(element, None);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // For unary and binary expressions, recursively evaluate children
+    // with our array-aware evaluator (not try_eval, since children may
+    // also contain decoder calls).
+    match expression {
         Expression::UnaryExpression(unary) => {
             let argument = eval_checksum_expression(&unary.argument, array, offset)?;
             match unary.operator {
@@ -551,100 +585,19 @@ fn eval_checksum_expression(
                 oxc_syntax::operator::BinaryOperator::Addition => Some(left + right),
                 oxc_syntax::operator::BinaryOperator::Subtraction => Some(left - right),
                 oxc_syntax::operator::BinaryOperator::Multiplication => Some(left * right),
-                oxc_syntax::operator::BinaryOperator::Division => {
-                    if right == 0.0 {
-                        None
-                    } else {
-                        Some(left / right)
-                    }
+                oxc_syntax::operator::BinaryOperator::Division if right != 0.0 => {
+                    Some(left / right)
                 }
-                oxc_syntax::operator::BinaryOperator::Remainder => {
-                    if right == 0.0 {
-                        None
-                    } else {
-                        Some(left % right)
-                    }
+                oxc_syntax::operator::BinaryOperator::Remainder if right != 0.0 => {
+                    Some(left % right)
                 }
                 _ => None,
             }
         }
 
-        Expression::CallExpression(call) => {
-            let callee = unwrap_parens(&call.callee);
-
-            // parseInt(decoder(HEX)) or parseInt(decoder(HEX), radix)
-            if let Expression::Identifier(id) = callee {
-                if id.name.as_str() == "parseInt" && !call.arguments.is_empty() {
-                    let Some(arg) = call.arguments[0].as_expression() else {
-                        return None;
-                    };
-                    let arg = unwrap_parens(arg);
-
-                    // The argument is a call to the decoder: decoder(HEX)
-                    if let Expression::CallExpression(inner_call) = arg {
-                        if inner_call.arguments.len() == 1 {
-                            if let Some(inner_arg) = inner_call.arguments[0].as_expression() {
-                                if let Expression::NumericLiteral(literal) =
-                                    unwrap_parens(inner_arg)
-                                {
-                                    let raw_index = literal.value as usize;
-                                    let array_index = raw_index.checked_sub(offset)?;
-                                    if array_index >= array.len() {
-                                        return None;
-                                    }
-                                    let element = &array[array_index];
-                                    let parsed = js_parse_int(element)?;
-                                    return Some(parsed as f64);
-                                }
-                            }
-                        }
-                    }
-
-                    // Could also be parseInt of a string literal directly
-                    if let Expression::StringLiteral(literal) = arg {
-                        return js_parse_int(literal.value.as_str()).map(|v| v as f64);
-                    }
-                }
-            }
-
-            None
-        }
-
-        _ => None,
+        // For everything else (literals, pure calls), delegate to the shared evaluator.
+        _ => crate::utils::eval::try_eval(expression)?.as_number(),
     }
-}
-
-/// Simulate JavaScript's `parseInt` on a string: extract leading digits.
-fn js_parse_int(string: &str) -> Option<i64> {
-    let mut chars = string.chars().peekable();
-
-    // Skip leading whitespace.
-    while chars.peek().map_or(false, |c| c.is_whitespace()) {
-        chars.next();
-    }
-
-    // Check for sign.
-    let negative = match chars.peek() {
-        Some('-') => {
-            chars.next();
-            true
-        }
-        Some('+') => {
-            chars.next();
-            false
-        }
-        _ => false,
-    };
-
-    // Collect leading digits.
-    let digits: String = chars.take_while(|c| c.is_ascii_digit()).collect();
-
-    if digits.is_empty() {
-        return None;
-    }
-
-    let value: i64 = digits.parse().ok()?;
-    Some(if negative { -value } else { value })
 }
 
 /// Unwrap parenthesized expressions.

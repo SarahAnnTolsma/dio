@@ -1,5 +1,7 @@
 //! Shared utility functions used by multiple transformers.
 
+pub mod eval;
+
 const STANDARD_BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
