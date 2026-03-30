@@ -95,3 +95,59 @@ var y = btoa("hello");
 var x = "Hello";
 var y = "aGVsbG8=";
 ```
+
+## LiteralMethodEvaluationTransformer
+
+Evaluates method calls and property accesses on string and array literals when all arguments are constant.
+
+### String method calls
+
+```js
+// Before
+var a = "hello".charAt(0);
+var b = "hello".charCodeAt(0);
+var c = "hello".indexOf("ll");
+var d = "hello".lastIndexOf("l");
+var e = "hello".includes("ell");
+var f = "hello".startsWith("he");
+var g = "hello".endsWith("lo");
+var h = "hello".slice(1, 3);
+var i = "hello".substring(1, 3);
+var j = "HELLO".toLowerCase();
+var k = "hello".toUpperCase();
+var l = "  hello  ".trim();
+var m = "ab".repeat(3);
+var n = "hello".replace("l", "r");
+
+// After
+var a = "h";
+var b = 104;
+var c = 2;
+var d = 3;
+var e = true;
+var f = true;
+var g = true;
+var h = "el";
+var i = "el";
+var j = "hello";
+var k = "HELLO";
+var l = "hello";
+var m = "ababab";
+var n = "herlo";
+```
+
+### Property access on literals
+
+```js
+// Before
+var a = "hello".length;
+var b = "hello"[0];
+var c = [1, 2, 3].length;
+var d = [10, 20, 30][1];
+
+// After
+var a = 5;
+var b = "h";
+var c = 3;
+var d = 20;
+```

@@ -92,9 +92,39 @@ obj["class"];          // kept: reserved word
 obj["0"];              // kept: starts with digit
 ```
 
+## LogicalToIfTransformer
+
+Converts standalone logical `&&` and `||` expressions (used as statements, not values) into if statements.
+
+```js
+// Before
+x && y();
+x || y();
+var z = x && y;  // not affected (value position)
+
+// After
+if (x) { y(); }
+if (!x) { y(); }
+var z = x && y;  // unchanged
+```
+
+### Combined with ControlFlowTransformer
+
+When the left side is a constant, the logical expression is first converted to an if statement, then simplified:
+
+```js
+// Before
+true && console.log("hi");
+
+// After (intermediate: if (true) { console.log("hi"); })
+console.log("hi");
+```
+
 ## SequenceStatementTransformer
 
-Extracts leading expressions from sequence expressions in `return` and `if` statements, hoisting them as standalone statements. This preserves side effects that the CommaTransformer would not handle.
+Extracts leading expressions from sequence expressions in `return`, `if`, `while`, `throw`, `switch`, and `for` (test position) statements, hoisting them as standalone statements. This preserves side effects that the CommaTransformer would not handle.
+
+Note: `do { ... } while (a, b, c);` is NOT handled because the while condition runs after the body, so hoisting would change execution order.
 
 ### Return statements
 
@@ -122,6 +152,54 @@ if (a(), b(), c) { x(); }
 a();
 b();
 if (c) { x(); }
+```
+
+### While statements
+
+```js
+// Before
+while ((a(), b(), c)) { x(); }
+
+// After
+a();
+b();
+while (c) { x(); }
+```
+
+### Throw statements
+
+```js
+// Before
+throw (a(), b(), c);
+
+// After
+a();
+b();
+throw c;
+```
+
+### Switch statements
+
+```js
+// Before
+switch ((a(), b(), x)) { case 1: break; }
+
+// After
+a();
+b();
+switch (x) { case 1: break; }
+```
+
+### For statement test
+
+```js
+// Before
+for (; (a(), b(), c); ) { x(); }
+
+// After
+a();
+b();
+for (; c;) { x(); }
 ```
 
 ## TernaryToIfTransformer

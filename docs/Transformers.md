@@ -13,7 +13,7 @@ Transformers that evaluate or propagate constant values.
 
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
-| ConstantFoldingTransformer | Active | Main | Folds constant arithmetic, comparisons, typeof, and void expressions |
+| ConstantFoldingTransformer | Active | Main | Folds constant arithmetic, comparisons, typeof, void, and type coercion (JSFuck patterns) |
 | ConstantInliningTransformer | Stub | Main | Inlines single-assignment constants into their references |
 
 ### [Evaluation](Evaluation.md)
@@ -23,6 +23,7 @@ Transformers that evaluate known built-in function calls.
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
 | BuiltinEvaluationTransformer | Active | Main | Evaluates pure built-in functions with constant arguments |
+| LiteralMethodEvaluationTransformer | Active | Main | Evaluates method calls and property access on string/array literals |
 
 ### [String](String.md)
 
@@ -42,8 +43,17 @@ Transformers that normalize and simplify control flow and expressions.
 | CommaTransformer | Active | Main | Removes side-effect-free leading expressions from sequences |
 | ControlFlowTransformer | Active | Main | Simplifies if/else and ternaries with constant conditions |
 | MemberTransformer | Active | Main | Converts computed member access to dot notation |
-| SequenceStatementTransformer | Active | Main | Hoists leading expressions from sequences in return/if |
+| LogicalToIfTransformer | Active | Main | Converts standalone logical &&/\|\| expressions to if statements |
+| SequenceStatementTransformer | Active | Main | Hoists leading expressions from sequences in return/if/while/throw/switch/for |
 | TernaryToIfTransformer | Active | Main | Converts standalone ternary expressions to if/else |
+
+### [Inlining](Inlining.md)
+
+Transformers that inline function calls and remove indirection.
+
+| Transformer | Status | Phase | Description |
+|---|---|---|---|
+| ProxyFunctionInliningTransformer | Stub | Main | Inlines proxy functions that wrap a single operation |
 
 ### [Elimination](Elimination.md)
 

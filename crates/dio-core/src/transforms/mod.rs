@@ -3,6 +3,7 @@
 pub mod constant;
 pub mod elimination;
 pub mod evaluation;
+pub mod inlining;
 pub mod renaming;
 pub mod simplification;
 pub mod string;
@@ -17,15 +18,18 @@ pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
     vec![
         // Main phase, First priority
         Box::new(constant::ConstantInliningTransformer),
+        Box::new(inlining::ProxyFunctionInliningTransformer),
         // Main phase, Default priority
         Box::new(simplification::BlockNormalizationTransformer),
         Box::new(constant::ConstantFoldingTransformer),
         Box::new(string::StringConcatenationTransformer),
         Box::new(evaluation::BuiltinEvaluationTransformer),
+        Box::new(evaluation::LiteralMethodEvaluationTransformer),
         Box::new(simplification::CommaTransformer),
         Box::new(simplification::MemberTransformer),
         Box::new(simplification::ControlFlowTransformer),
         Box::new(simplification::TernaryToIfTransformer),
+        Box::new(simplification::LogicalToIfTransformer),
         Box::new(simplification::SequenceStatementTransformer),
         // Finalize phase
         Box::new(elimination::DeadCodeTransformer),

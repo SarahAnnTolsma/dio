@@ -5,6 +5,13 @@
 //!
 //! - `return (a, b, c);` -> `a; b; return c;`
 //! - `if (a, b, c) { ... }` -> `a; b; if (c) { ... }`
+//! - `while (a, b, c) { ... }` -> `a; b; while (c) { ... }`
+//! - `throw (a, b, c);` -> `a; b; throw c;`
+//! - `switch (a, b, c) { ... }` -> `a; b; switch (c) { ... }`
+//! - `for (; (a, b, c); ) { ... }` -> `a; b; for (; c; ) { ... }` (test position only)
+//!
+//! Note: `do { ... } while (a, b, c);` is NOT handled because the while
+//! condition runs after the body, so hoisting would change execution order.
 //!
 //! This complements the `CommaTransformer`, which drops side-effect-free leading
 //! expressions. This transformer preserves all leading expressions as statements,
@@ -17,7 +24,8 @@ use oxc_traverse::TraverseCtx;
 
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
-/// Hoists leading expressions from sequence expressions in return and if statements.
+/// Hoists leading expressions from sequence expressions in return, if, while,
+/// throw, switch, and for (test position) statements.
 pub struct SequenceStatementTransformer;
 
 impl Transformer for SequenceStatementTransformer {
@@ -76,6 +84,10 @@ fn try_extract_leading_expressions<'a>(
     let target_expression = match statement {
         Statement::ReturnStatement(return_statement) => return_statement.argument.as_mut()?,
         Statement::IfStatement(if_statement) => &mut if_statement.test,
+        Statement::WhileStatement(while_statement) => &mut while_statement.test,
+        Statement::ThrowStatement(throw_statement) => &mut throw_statement.argument,
+        Statement::SwitchStatement(switch_statement) => &mut switch_statement.discriminant,
+        Statement::ForStatement(for_statement) => for_statement.test.as_mut()?,
         _ => return None,
     };
 

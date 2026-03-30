@@ -98,6 +98,66 @@ var x = void 0;
 var x = undefined;
 ```
 
+### Type coercion (JSFuck patterns)
+
+Logical not on non-boolean literals follows JavaScript truthiness rules:
+
+```js
+// Before
+var a = ![];
+var b = !{};
+var c = !0;
+var d = !1;
+var e = !"";
+var f = !"hello";
+var g = !null;
+
+// After
+var a = false;    // arrays are truthy
+var b = false;    // objects are truthy
+var c = true;     // 0 is falsy
+var d = false;    // nonzero is truthy
+var e = true;     // empty string is falsy
+var f = false;    // nonempty string is truthy
+var g = true;     // null is falsy
+```
+
+Unary plus coerces to number:
+
+```js
+// Before
+var a = +true;
+var b = +false;
+var c = +null;
+var d = +[];
+var e = +"42";
+var f = +"";
+
+// After
+var a = 1;
+var b = 0;
+var c = 0;
+var d = 0;
+var e = 42;
+var f = 0;
+```
+
+Multi-pass simplification handles chained patterns:
+
+```js
+// Before (JSFuck-style)
+var a = !![];        // ![] -> false, !false -> true
+var b = !+[];        // +[] -> 0, !0 -> true
+var c = +!![];       // !![] -> true, +true -> 1
+var d = +!![] + +!![];  // -> 1 + 1 -> 2
+
+// After
+var a = true;
+var b = true;
+var c = 1;
+var d = 2;
+```
+
 ## ConstantInliningTransformer
 
 **Status: Stub** - not yet implemented.

@@ -19,5 +19,5 @@ Each transformer is grouped by category and implements the `Transformer` trait f
 - All AST mutations go through `operations::replace_expression`, `operations::replace_statement`, etc. — never assign directly.
 - Always unwrap `ParenthesizedExpression` when matching operands or conditions.
 - Use `operations::create_block_statement` when creating new block statements.
-- Every transformer must have integration tests in `crates/dio-core/tests/integration.rs`.
+- Every transformer must have integration tests in the appropriate `crates/dio-core/tests/<category>.rs` file.
 - Every transformer must be documented in `docs/Transformers.md` and the relevant category doc.

@@ -3,8 +3,14 @@
 //! Handles:
 //! - Numeric binary operations: `1 + 2` -> `3`
 //! - Boolean negation: `!true` -> `false`
+//! - Logical not on literals: `!0` -> `true`, `!""` -> `true`, `![]` -> `false`
+//! - Unary plus coercion: `+true` -> `1`, `+[]` -> `0`, `+"5"` -> `5`
+//! - Unary negation coercion: `-true` -> `-1`
 //! - String concatenation of literals (basic cases): `"a" + "b"` -> `"ab"`
 //! - Typeof on literals: `typeof "hello"` -> `"string"`
+//!
+//! These coercion rules enable multi-pass simplification of JSFuck-style patterns:
+//! `!![]` -> `!false` -> `true`, `+!![]` -> `+true` -> `1`
 
 use oxc_ast::ast::Expression;
 use oxc_span::SPAN;
@@ -174,23 +180,74 @@ fn try_fold_unary_expression<'a>(
 
     match unary.operator {
         UnaryOperator::LogicalNot => {
-            if let Expression::BooleanLiteral(boolean) = &unary.argument {
-                let negated = !boolean.value;
-                let replacement = context.ast.expression_boolean_literal(SPAN, negated);
+            let argument = unwrap_parens(&unary.argument);
+            let result = match argument {
+                Expression::BooleanLiteral(boolean) => Some(!boolean.value),
+                // !0 -> true, !NaN -> true, !<nonzero> -> false
+                Expression::NumericLiteral(number) => {
+                    Some(number.value == 0.0 || number.value.is_nan())
+                }
+                // !"" -> true, !"hello" -> false
+                Expression::StringLiteral(string) => Some(string.value.is_empty()),
+                // !null -> true
+                Expression::NullLiteral(_) => Some(true),
+                // ![] -> false (arrays are always truthy in JavaScript)
+                Expression::ArrayExpression(_) => Some(false),
+                // !{} -> false (objects are always truthy)
+                Expression::ObjectExpression(_) => Some(false),
+                _ => None,
+            };
+            if let Some(result_value) = result {
+                let replacement = context.ast.expression_boolean_literal(SPAN, result_value);
                 operations::replace_expression(expression, replacement, context);
                 return true;
             }
         }
         UnaryOperator::UnaryNegation => {
-            if let Expression::NumericLiteral(number) = &unary.argument {
-                let replacement = make_numeric_literal(context, -number.value);
+            let argument = unwrap_parens(&unary.argument);
+            let result = match argument {
+                Expression::NumericLiteral(number) => Some(-number.value),
+                // -true -> -1, -false -> -0 (we emit -0 as 0)
+                Expression::BooleanLiteral(boolean) => {
+                    Some(if boolean.value { -1.0 } else { -0.0 })
+                }
+                // -null -> -0
+                Expression::NullLiteral(_) => Some(-0.0),
+                // -[] -> -0 (empty array coerces to 0)
+                Expression::ArrayExpression(array) if array.elements.is_empty() => Some(-0.0),
+                _ => None,
+            };
+            if let Some(result_value) = result {
+                let replacement = make_numeric_literal(context, result_value);
                 operations::replace_expression(expression, replacement, context);
                 return true;
             }
         }
         UnaryOperator::UnaryPlus => {
-            if let Expression::NumericLiteral(number) = &unary.argument {
-                let replacement = make_numeric_literal(context, number.value);
+            let argument = unwrap_parens(&unary.argument);
+            let result = match argument {
+                Expression::NumericLiteral(number) => Some(number.value),
+                // +true -> 1, +false -> 0
+                Expression::BooleanLiteral(boolean) => {
+                    Some(if boolean.value { 1.0 } else { 0.0 })
+                }
+                // +null -> 0
+                Expression::NullLiteral(_) => Some(0.0),
+                // +[] -> 0 (empty array coerces to "")
+                Expression::ArrayExpression(array) if array.elements.is_empty() => Some(0.0),
+                // +"5" -> 5, +"" -> 0, +"3.14" -> 3.14
+                Expression::StringLiteral(string) => {
+                    let trimmed = string.value.as_str().trim();
+                    if trimmed.is_empty() {
+                        Some(0.0)
+                    } else {
+                        trimmed.parse::<f64>().ok()
+                    }
+                }
+                _ => None,
+            };
+            if let Some(result_value) = result {
+                let replacement = make_numeric_literal(context, result_value);
                 operations::replace_expression(expression, replacement, context);
                 return true;
             }

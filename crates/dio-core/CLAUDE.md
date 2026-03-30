@@ -112,11 +112,22 @@ let block = operations::create_block_statement(body, context);
 
 ### 7. Add tests
 
-Every new transformer must have integration tests in `crates/dio-core/tests/integration.rs`. Tests should:
+Every new transformer must have integration tests. Tests are organized by transformer category in `crates/dio-core/tests/`:
+
+- `constant_folding.rs` — ConstantFoldingTransformer (including JSFuck coercion)
+- `string_concatenation.rs` — StringConcatenationTransformer
+- `builtin_evaluation.rs` — BuiltinEvaluationTransformer
+- `literal_method_evaluation.rs` — LiteralMethodEvaluationTransformer
+- `control_flow.rs` — ControlFlowTransformer
+- `simplification.rs` — BlockNormalization, Comma, TernaryToIf, LogicalToIf, SequenceStatement, Member
+- `dead_code.rs` — DeadCodeTransformer
+- `combined.rs` — Multi-transformer interaction tests
+
+All test files use `mod common; use common::deobfuscate;` for the shared helper. Tests should:
 
 - Cover the primary transformation (happy path).
 - Cover edge cases (no-op when the pattern doesn't match).
-- Cover interaction with other transformers (e.g., constant folding feeds into control flow).
+- Cover interaction with other transformers (e.g., constant folding feeds into control flow) in `combined.rs`.
 - Use the `deobfuscate()` helper which trims output for comparison.
 
 ### 8. Update documentation
