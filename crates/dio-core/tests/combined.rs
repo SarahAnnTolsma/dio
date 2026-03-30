@@ -6,29 +6,32 @@ use common::deobfuscate;
 #[test]
 fn fold_then_control_flow() {
     assert_eq!(
-        deobfuscate("var x = (1 + 1) ? \"yes\" : \"no\";"),
-        "var x = \"yes\";"
+        deobfuscate("var x = (1 + 1) ? \"yes\" : \"no\"; f(x);"),
+        "f(\"yes\");"
     );
 }
 
 #[test]
 fn string_concat_and_builtin() {
     assert_eq!(
-        deobfuscate("var x = atob(\"SGVs\") + atob(\"bG8=\");"),
-        "var x = \"Hello\";"
+        deobfuscate("var x = atob(\"SGVs\") + atob(\"bG8=\"); f(x);"),
+        "f(\"Hello\");"
     );
 }
 
 #[test]
 fn comma_and_fold() {
-    assert_eq!(deobfuscate("var x = (0, 1 + 2);"), "var x = 3;");
+    assert_eq!(
+        deobfuscate("var x = (0, 1 + 2); f(x);"),
+        "var x = 3;\nf(x);"
+    );
 }
 
 #[test]
 fn nested_ternaries() {
     assert_eq!(
-        deobfuscate("var x = true ? (false ? 1 : 2) : 3;"),
-        "var x = 2;"
+        deobfuscate("var x = true ? (false ? 1 : 2) : 3; f(x);"),
+        "var x = 2;\nf(x);"
     );
 }
 
@@ -40,8 +43,8 @@ fn member_and_string_concat() {
 #[test]
 fn from_char_code_and_member() {
     assert_eq!(
-        deobfuscate("var greeting = String.fromCharCode(72, 101, 108, 108, 111);"),
-        "var greeting = \"Hello\";"
+        deobfuscate("var greeting = String.fromCharCode(72, 101, 108, 108, 111); f(greeting);"),
+        "f(\"Hello\");"
     );
 }
 

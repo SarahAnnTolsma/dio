@@ -15,7 +15,7 @@
 use oxc_ast::ast::Expression;
 use oxc_span::SPAN;
 use oxc_syntax::number::NumberBase;
-use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
+use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 use oxc_traverse::TraverseCtx;
 
 use crate::operations;
@@ -30,7 +30,11 @@ impl Transformer for ConstantFoldingTransformer {
     }
 
     fn interests(&self) -> &[AstNodeType] {
-        &[AstNodeType::BinaryExpression, AstNodeType::UnaryExpression]
+        &[
+            AstNodeType::BinaryExpression,
+            AstNodeType::UnaryExpression,
+            AstNodeType::LogicalExpression,
+        ]
     }
 
     fn priority(&self) -> TransformerPriority {
@@ -49,6 +53,9 @@ impl Transformer for ConstantFoldingTransformer {
         match expression {
             Expression::BinaryExpression(_) => try_fold_binary_expression(expression, context),
             Expression::UnaryExpression(_) => try_fold_unary_expression(expression, context),
+            Expression::LogicalExpression(_) => {
+                try_fold_logical_expression(expression, context)
+            }
             _ => false,
         }
     }
@@ -291,6 +298,145 @@ fn try_fold_unary_expression<'a>(
                 let result = !(number.value as i32);
                 let replacement = make_numeric_literal(context, f64::from(result));
                 operations::replace_expression(expression, replacement, context);
+                return true;
+            }
+        }
+        _ => {}
+    }
+
+    false
+}
+
+/// Determine the static truthiness of an expression.
+/// Returns `Some(true)` if definitely truthy, `Some(false)` if definitely falsy,
+/// `None` if unknown.
+fn static_truthiness(expression: &Expression<'_>) -> Option<bool> {
+    let expression = unwrap_parens(expression);
+    match expression {
+        Expression::BooleanLiteral(literal) => Some(literal.value),
+        Expression::NumericLiteral(literal) => Some(literal.value != 0.0 && !literal.value.is_nan()),
+        Expression::StringLiteral(literal) => Some(!literal.value.is_empty()),
+        Expression::NullLiteral(_) => Some(false),
+        Expression::ArrayExpression(_) | Expression::ObjectExpression(_) => Some(true),
+        _ => None,
+    }
+}
+
+/// Simplify logical expressions (`&&`, `||`) when one operand has a known truthiness.
+///
+/// - `x && false` → `(x, false)` — x may have side effects
+/// - `false && x` → `false` — short-circuit, x is never evaluated
+/// - `x || true` → `(x, true)` — x may have side effects
+/// - `true || x` → `true` — short-circuit, x is never evaluated
+/// - `x && true` → `x` — the `&& true` is redundant
+/// - `true && x` → `x` — always evaluates to x
+/// - `x || false` → `x` — the `|| false` is redundant
+/// - `false || x` → `x` — always evaluates to x
+fn try_fold_logical_expression<'a>(
+    expression: &mut Expression<'a>,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    let Expression::LogicalExpression(logical) = expression else {
+        return false;
+    };
+
+    // Only handle && and ||, not ??
+    let operator = logical.operator;
+    if operator == LogicalOperator::Coalesce {
+        return false;
+    }
+
+    let left_truthiness = static_truthiness(&logical.left);
+    let right_truthiness = static_truthiness(&logical.right);
+
+    match operator {
+        LogicalOperator::And => {
+            if let Some(false) = right_truthiness {
+                // `x && false` → `(x, false)` — preserve x for side effects
+                let left = std::mem::replace(
+                    &mut logical.left,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                let right = std::mem::replace(
+                    &mut logical.right,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                let mut expressions = context.ast.vec_with_capacity(2);
+                expressions.push(left);
+                expressions.push(right);
+                operations::replace_expression_with_sequence(expression, expressions, context);
+                return true;
+            }
+            if let Some(false) = left_truthiness {
+                // `false && x` → `false` — short-circuit, x is never evaluated
+                let left = std::mem::replace(
+                    &mut logical.left,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                operations::replace_expression(expression, left, context);
+                return true;
+            }
+            if let Some(true) = right_truthiness {
+                // `x && true` → `x`
+                let left = std::mem::replace(
+                    &mut logical.left,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                operations::replace_expression(expression, left, context);
+                return true;
+            }
+            if let Some(true) = left_truthiness {
+                // `true && x` → `x`
+                let right = std::mem::replace(
+                    &mut logical.right,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                operations::replace_expression(expression, right, context);
+                return true;
+            }
+        }
+        LogicalOperator::Or => {
+            if let Some(true) = right_truthiness {
+                // `x || true` → `(x, true)` — preserve x for side effects
+                let left = std::mem::replace(
+                    &mut logical.left,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                let right = std::mem::replace(
+                    &mut logical.right,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                let mut expressions = context.ast.vec_with_capacity(2);
+                expressions.push(left);
+                expressions.push(right);
+                operations::replace_expression_with_sequence(expression, expressions, context);
+                return true;
+            }
+            if let Some(true) = left_truthiness {
+                // `true || x` → `true` — short-circuit, x is never evaluated
+                let left = std::mem::replace(
+                    &mut logical.left,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                operations::replace_expression(expression, left, context);
+                return true;
+            }
+            if let Some(false) = right_truthiness {
+                // `x || false` → `x`
+                let left = std::mem::replace(
+                    &mut logical.left,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                operations::replace_expression(expression, left, context);
+                return true;
+            }
+            if let Some(false) = left_truthiness {
+                // `false || x` → `x`
+                let right = std::mem::replace(
+                    &mut logical.right,
+                    context.ast.expression_null_literal(SPAN),
+                );
+                operations::replace_expression(expression, right, context);
                 return true;
             }
         }

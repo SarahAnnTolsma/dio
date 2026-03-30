@@ -93,17 +93,18 @@ fn add_zero_identity() {
 
 #[test]
 fn xor_self_is_zero() {
-    assert_eq!(deobfuscate("var x = a ^ a;"), "var x = 0;");
+    // x is unused and 0 is side-effect-free, so the declaration is pruned.
+    assert_eq!(deobfuscate("var x = a ^ a;"), "");
 }
 
 #[test]
 fn or_complement_is_all_ones() {
-    assert_eq!(deobfuscate("var x = a | ~a;"), "var x = -1;");
+    assert_eq!(deobfuscate("var x = a | ~a;"), "");
 }
 
 #[test]
 fn and_complement_is_zero() {
-    assert_eq!(deobfuscate("var x = a & ~a;"), "var x = 0;");
+    assert_eq!(deobfuscate("var x = a & ~a;"), "");
 }
 
 // ---------------------------------------------------------------------------

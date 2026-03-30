@@ -36,6 +36,7 @@ pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
         Box::new(simplification::SequenceStatementTransformer),
         // Finalize phase
         Box::new(elimination::DeadCodeTransformer),
+        Box::new(elimination::UnusedVariableTransformer),
         Box::new(renaming::VariableRenamingTransformer),
     ]
 }

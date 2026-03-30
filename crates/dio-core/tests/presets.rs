@@ -27,7 +27,7 @@ fn generic_preset_matches_default() {
 
 #[test]
 fn obfuscator_io_folds_constants() {
-    assert_eq!(deobfuscate_with(Preset::ObfuscatorIo, "var x = 1 + 2;"), "var x = 3;");
+    assert_eq!(deobfuscate_with(Preset::ObfuscatorIo, "var x = 1 + 2; f(x);"), "f(3);");
 }
 
 #[test]
@@ -35,9 +35,9 @@ fn obfuscator_io_inlines_proxy_functions() {
     assert_eq!(
         deobfuscate_with(
             Preset::ObfuscatorIo,
-            "function _0x1(a, b) { return a + b; } var x = _0x1(1, 2);"
+            "function _0x1(a, b) { return a + b; } var x = _0x1(1, 2); f(x);"
         ),
-        "var x = 3;"
+        "f(3);"
     );
 }
 
@@ -98,6 +98,6 @@ fn preset_from_name_unknown() {
 fn add_transformers_to_empty() {
     let mut deobfuscator = Deobfuscator::empty();
     deobfuscator.add_transformers(dio_core::obfuscator_io_transformers());
-    let result = deobfuscator.deobfuscate("var x = 1 + 2;").trim().to_string();
-    assert_eq!(result, "var x = 3;");
+    let result = deobfuscator.deobfuscate("var x = 1 + 2; f(x);").trim().to_string();
+    assert_eq!(result, "f(3);");
 }

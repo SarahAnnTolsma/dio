@@ -137,19 +137,17 @@ fn logical_and_with_constant_condition() {
 
 #[test]
 fn comma_simplification() {
-    assert_eq!(deobfuscate("var x = (1, 2, 3);"), "var x = 3;");
+    assert_eq!(deobfuscate("var x = (1, 2, 3); f(x);"), "var x = 3;\nf(x);");
 }
 
 #[test]
 fn comma_with_identifiers() {
-    // `a` is a constant (1), so it gets inlined into the sequence,
-    // then the comma transformer drops the side-effect-free leading values.
-    assert_eq!(deobfuscate("var a = 1; var x = (a, 2, 3);"), "var x = 3;");
+    assert_eq!(deobfuscate("var a = 1; var x = (a, 2, 3); f(x);"), "var x = 3;\nf(x);");
 }
 
 #[test]
 fn comma_nested() {
-    assert_eq!(deobfuscate("var x = (0, 0, 0, 42);"), "var x = 42;");
+    assert_eq!(deobfuscate("var x = (0, 0, 0, 42); f(x);"), "var x = 42;\nf(x);");
 }
 
 // ---------------------------------------------------------------------------
@@ -257,45 +255,43 @@ fn sequence_expression_statement_single_not_affected() {
 #[test]
 fn variable_declaration_split_var() {
     assert_eq!(
-        deobfuscate("var a = 1, b = 2, c = 3;"),
-        "var a = 1;\nvar b = 2;\nvar c = 3;"
+        deobfuscate("var a = 1, b = 2, c = 3; f(a, b, c);"),
+        "f(1, 2, 3);"
     );
 }
 
 #[test]
 fn variable_declaration_split_let() {
     assert_eq!(
-        deobfuscate("let a = 1, b = 2;"),
-        "let a = 1;\nlet b = 2;"
+        deobfuscate("let a = 1, b = 2; f(a, b);"),
+        "f(1, 2);"
     );
 }
 
 #[test]
 fn variable_declaration_split_const() {
     assert_eq!(
-        deobfuscate("const a = 1, b = 2;"),
-        "const a = 1;\nconst b = 2;"
+        deobfuscate("const a = 1, b = 2; f(a, b);"),
+        "f(1, 2);"
     );
 }
 
 #[test]
 fn variable_declaration_single_unchanged() {
-    assert_eq!(deobfuscate("var x = 1;"), "var x = 1;");
+    assert_eq!(deobfuscate("var x = 1; f(x);"), "f(1);");
 }
 
 #[test]
 fn variable_declaration_split_no_init() {
-    assert_eq!(
-        deobfuscate("var a, b, c;"),
-        "var a;\nvar b;\nvar c;"
-    );
+    // No initializers, and no references — variables are pruned.
+    assert_eq!(deobfuscate("var a, b, c;"), "");
 }
 
 #[test]
 fn variable_declaration_split_mixed_init() {
     assert_eq!(
-        deobfuscate("var a = 1, b, c = 3;"),
-        "var a = 1;\nvar b;\nvar c = 3;"
+        deobfuscate("var a = 1, b, c = 3; f(a, c);"),
+        "f(1, 3);"
     );
 }
 

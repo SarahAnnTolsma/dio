@@ -27,55 +27,55 @@ fn if_false_no_else() {
 #[test]
 fn ternary_true() {
     assert_eq!(
-        deobfuscate("var x = true ? \"yes\" : \"no\";"),
-        "var x = \"yes\";"
+        deobfuscate("var x = true ? \"yes\" : \"no\"; f(x);"),
+        "f(\"yes\");"
     );
 }
 
 #[test]
 fn ternary_false() {
     assert_eq!(
-        deobfuscate("var x = false ? \"yes\" : \"no\";"),
-        "var x = \"no\";"
+        deobfuscate("var x = false ? \"yes\" : \"no\"; f(x);"),
+        "f(\"no\");"
     );
 }
 
 #[test]
 fn ternary_numeric_truthy() {
     assert_eq!(
-        deobfuscate("var x = 1 ? \"yes\" : \"no\";"),
-        "var x = \"yes\";"
+        deobfuscate("var x = 1 ? \"yes\" : \"no\"; f(x);"),
+        "f(\"yes\");"
     );
 }
 
 #[test]
 fn ternary_numeric_falsy() {
     assert_eq!(
-        deobfuscate("var x = 0 ? \"yes\" : \"no\";"),
-        "var x = \"no\";"
+        deobfuscate("var x = 0 ? \"yes\" : \"no\"; f(x);"),
+        "f(\"no\");"
     );
 }
 
 #[test]
 fn ternary_empty_string_falsy() {
     assert_eq!(
-        deobfuscate("var x = \"\" ? \"yes\" : \"no\";"),
-        "var x = \"no\";"
+        deobfuscate("var x = \"\" ? \"yes\" : \"no\"; f(x);"),
+        "f(\"no\");"
     );
 }
 
 #[test]
 fn ternary_nonempty_string_truthy() {
     assert_eq!(
-        deobfuscate("var x = \"hi\" ? \"yes\" : \"no\";"),
-        "var x = \"yes\";"
+        deobfuscate("var x = \"hi\" ? \"yes\" : \"no\"; f(x);"),
+        "f(\"yes\");"
     );
 }
 
 #[test]
 fn ternary_null_falsy() {
     assert_eq!(
-        deobfuscate("var x = null ? \"yes\" : \"no\";"),
-        "var x = \"no\";"
+        deobfuscate("var x = null ? \"yes\" : \"no\"; f(x);"),
+        "f(\"no\");"
     );
 }

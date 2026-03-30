@@ -534,7 +534,6 @@ impl Transformer for StringArrayDecoderTransformer {
                     }
                 }
                 Statement::VariableDeclaration(declaration) => {
-                    // Remove if all declarators are array symbols being decoded.
                     let all_arrays = declaration.declarations.iter().all(|declarator| {
                         if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
                             &declarator.id

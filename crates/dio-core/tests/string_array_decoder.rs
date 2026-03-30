@@ -87,9 +87,7 @@ fn mixed_array_number_passthrough() {
     let input = r#"
         var arr = ["aGVsbG8", 42, "d29ybGQ", true];
         function decode(n) { var t = arr[n]; return "string" == typeof t ? atob(t) : t }
-        var a = decode(0);
-        var b = decode(1);
-        var c = decode(2);
+        f(decode(0), decode(1), decode(2));
     "#;
     // decode(0) → "hello", decode(1) → 42, decode(2) → "world"
     let result = deobfuscate(input);

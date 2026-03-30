@@ -109,8 +109,9 @@ fn skip_non_literal_initializer() {
 
 #[test]
 fn skip_unreferenced_variable() {
-    // Dead code removal is not the constant inliner's job.
-    assert_eq!(deobfuscate("var x = 5;"), "var x = 5;");
+    // Unreferenced variables with literal initializers are pruned by
+    // the UnusedVariableTransformer in the finalize phase.
+    assert_eq!(deobfuscate("var x = 5;"), "");
 }
 
 // ---------------------------------------------------------------------------
