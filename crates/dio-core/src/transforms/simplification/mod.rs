@@ -1,5 +1,6 @@
 //! Transforms that simplify expressions and statements.
 
+mod bitwise_simplification_transformer;
 mod block_normalization_transformer;
 mod comma_transformer;
 mod control_flow_transformer;
@@ -8,6 +9,7 @@ mod member_transformer;
 mod sequence_statement_transformer;
 mod ternary_to_if_transformer;
 
+pub use bitwise_simplification_transformer::BitwiseSimplificationTransformer;
 pub use block_normalization_transformer::BlockNormalizationTransformer;
 pub use comma_transformer::CommaTransformer;
 pub use control_flow_transformer::ControlFlowTransformer;

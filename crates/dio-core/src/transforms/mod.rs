@@ -21,6 +21,7 @@ pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
         Box::new(inlining::ProxyFunctionInliningTransformer),
         // Main phase, Default priority
         Box::new(simplification::BlockNormalizationTransformer),
+        Box::new(simplification::BitwiseSimplificationTransformer),
         Box::new(constant::ConstantFoldingTransformer),
         Box::new(string::StringConcatenationTransformer),
         Box::new(evaluation::BuiltinEvaluationTransformer),

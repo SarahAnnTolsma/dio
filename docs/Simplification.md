@@ -1,5 +1,89 @@
 # Simplification Transformers
 
+## BitwiseSimplificationTransformer
+
+Simplifies complex bitwise and mixed boolean-arithmetic (MBA) expressions by evaluating them at multiple test points and matching the results against canonical operations. This handles arbitrary nesting and composition automatically — no manual pattern matching for each rewrite rule.
+
+### XOR equivalences
+
+```js
+// Before
+var x = (a & ~b) | (~a & b);
+var y = (a | b) & ~(a & b);
+
+// After
+var x = a ^ b;
+var y = a ^ b;
+```
+
+### De Morgan's law
+
+```js
+// Before
+var x = ~(~a | ~b);
+var y = ~(~a & ~b);
+
+// After
+var x = a & b;
+var y = a | b;
+```
+
+### Two's complement negation
+
+```js
+// Before
+var x = ~a + 1;
+var y = (a ^ -1) + 1;
+
+// After
+var x = -a;
+var y = -a;
+```
+
+### Addition via bitwise decomposition
+
+```js
+// Before
+var x = (a ^ b) + 2 * (a & b);
+var y = (a | b) + (a & b);
+
+// After
+var x = a + b;
+var y = a + b;
+```
+
+### Subtraction via complement
+
+```js
+// Before
+var x = a + ~b + 1;
+
+// After
+var x = a - b;
+```
+
+### Identity and constant patterns
+
+```js
+// Before
+var a = ~~x;        // double NOT
+var b = x ^ 0;      // XOR with 0
+var c = x | 0;      // OR with 0
+var d = x & -1;     // AND with all-ones
+var e = x ^ x;      // XOR with self
+var f = x | ~x;     // OR with complement
+var g = x & ~x;     // AND with complement
+
+// After
+var a = x;
+var b = x;
+var c = x;
+var d = x;
+var e = 0;
+var f = -1;
+var g = 0;
+```
+
 ## BlockNormalizationTransformer
 
 Wraps bare statements in control flow bodies with block statements. Preserves `else if` chains.

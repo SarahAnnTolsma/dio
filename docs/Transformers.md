@@ -39,6 +39,7 @@ Transformers that normalize and simplify control flow and expressions.
 
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
+| BitwiseSimplificationTransformer | Active | Main | Simplifies MBA expressions via truth table evaluation |
 | BlockNormalizationTransformer | Active | Main | Wraps bare control flow bodies in block statements |
 | CommaTransformer | Active | Main | Removes side-effect-free leading expressions from sequences |
 | ControlFlowTransformer | Active | Main | Simplifies if/else and ternaries with constant conditions |

@@ -119,6 +119,7 @@ Every new transformer must have integration tests. Tests are organized by transf
 - `builtin_evaluation.rs` — BuiltinEvaluationTransformer
 - `literal_method_evaluation.rs` — LiteralMethodEvaluationTransformer
 - `control_flow.rs` — ControlFlowTransformer
+- `bitwise_simplification.rs` — BitwiseSimplificationTransformer
 - `simplification.rs` — BlockNormalization, Comma, TernaryToIf, LogicalToIf, SequenceStatement, Member
 - `dead_code.rs` — DeadCodeTransformer
 - `combined.rs` — Multi-transformer interaction tests
