@@ -72,3 +72,32 @@ Transformers that rename obfuscated identifiers.
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
 | VariableRenamingTransformer | Stub | Finalize | Renames obfuscated variable names to short readable names |
+
+## Presets
+
+Presets provide curated transformer sets optimized for specific obfuscation tools.
+
+| Preset | CLI flag | Description |
+|---|---|---|
+| Generic | `--preset generic` | Default transformer set — handles common patterns across many tools |
+| ObfuscatorIo | `--preset obfuscator-io` | Targets Obfuscator.io / javascript-obfuscator output |
+| JsFuck | `--preset jsfuck` | Focused subset for JSFuck-encoded JavaScript |
+
+### Usage
+
+```rust
+// Rust API
+use dio_core::{Deobfuscator, Preset};
+
+let deobfuscator = Deobfuscator::with_preset(Preset::ObfuscatorIo);
+
+// Or build from scratch:
+let mut deobfuscator = Deobfuscator::empty();
+deobfuscator.add_transformers(dio_core::obfuscator_io_transformers());
+```
+
+```bash
+# CLI
+dio --preset obfuscator-io input.js -o output.js
+dio --preset jsfuck encoded.js
+```

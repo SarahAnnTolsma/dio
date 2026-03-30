@@ -34,9 +34,11 @@ pub mod deobfuscator;
 pub mod diagnostics;
 pub mod operations;
 pub mod pattern;
+pub mod presets;
 pub mod transformer;
 pub mod transforms;
 
 pub use deobfuscator::{Deobfuscator, deobfuscate};
 pub use diagnostics::{TransformDiagnostics, TransformerStatistics};
+pub use presets::{Preset, jsfuck_transformers, obfuscator_io_transformers};
 pub use transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};

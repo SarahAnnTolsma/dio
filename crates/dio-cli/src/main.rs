@@ -5,7 +5,7 @@ use std::io::{self, Read};
 use std::process;
 
 use clap::Parser;
-use dio_core::Deobfuscator;
+use dio_core::{Deobfuscator, Preset};
 
 /// dio — JavaScript deobfuscation tool.
 ///
@@ -24,6 +24,11 @@ struct Arguments {
     /// Maximum number of transform iterations.
     #[arg(long, default_value = "100")]
     max_iterations: usize,
+
+    /// Transformer preset for a specific obfuscation tool.
+    /// Options: generic (default), obfuscator-io, jsfuck.
+    #[arg(long, default_value = "generic")]
+    preset: String,
 
     /// Print transform diagnostics to stderr.
     #[arg(long)]
@@ -50,8 +55,19 @@ fn main() {
         })
     };
 
+    // Resolve preset.
+    let preset = Preset::from_name(&arguments.preset).unwrap_or_else(|| {
+        eprintln!(
+            "Unknown preset '{}'. Available: {}",
+            arguments.preset,
+            Preset::all_names().join(", ")
+        );
+        process::exit(1);
+    });
+
     // Build deobfuscator.
-    let mut deobfuscator = Deobfuscator::new().with_max_iterations(arguments.max_iterations);
+    let mut deobfuscator =
+        Deobfuscator::with_preset(preset).with_max_iterations(arguments.max_iterations);
 
     if arguments.diagnostics {
         deobfuscator = deobfuscator.with_diagnostics_callback(|diagnostics| {

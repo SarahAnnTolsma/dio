@@ -125,6 +125,7 @@ Every new transformer must have integration tests. Tests are organized by transf
 - `proxy_function_inlining.rs` — ProxyFunctionInliningTransformer
 - `dead_code.rs` — DeadCodeTransformer
 - `combined.rs` — Multi-transformer interaction tests
+- `presets.rs` — Preset selection and configuration tests
 
 All test files use `mod common; use common::deobfuscate;` for the shared helper. Tests should:
 

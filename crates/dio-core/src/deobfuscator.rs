@@ -93,9 +93,24 @@ impl Deobfuscator {
         self
     }
 
+    /// Create a deobfuscator loaded with a specific preset's transformers.
+    pub fn with_preset(preset: crate::presets::Preset) -> Self {
+        Self {
+            transformers: preset.transformers(),
+            max_iterations: 100,
+            diagnostics_callback: None,
+            codegen_options: Self::default_codegen_options(),
+        }
+    }
+
     /// Add a custom transformer.
     pub fn add_transformer(&mut self, transformer: Box<dyn Transformer>) {
         self.transformers.push(transformer);
+    }
+
+    /// Add multiple custom transformers at once.
+    pub fn add_transformers(&mut self, transformers: Vec<Box<dyn Transformer>>) {
+        self.transformers.extend(transformers);
     }
 
     /// Deobfuscate JavaScript source code.
