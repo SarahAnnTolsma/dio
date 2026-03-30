@@ -12,8 +12,9 @@ use crate::transformer::Transformer;
 
 /// Returns the default set of built-in transformers.
 ///
-/// These are registered in a reasonable default order, though the dispatch
-/// system uses priority and phase rather than registration order.
+/// Registration order does not matter — the dispatch system groups
+/// transformers by phase and priority, and execution order within the
+/// same priority level is not guaranteed.
 pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
     vec![
         // Main phase, First priority

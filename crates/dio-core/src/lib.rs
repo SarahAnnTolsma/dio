@@ -37,6 +37,7 @@ pub mod pattern;
 pub mod presets;
 pub mod transformer;
 pub mod transforms;
+pub mod utils;
 
 pub use deobfuscator::{Deobfuscator, deobfuscate};
 pub use diagnostics::{TransformDiagnostics, TransformerStatistics};
