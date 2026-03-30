@@ -119,6 +119,50 @@ fn binary_proxy_with_variable_arguments() {
 }
 
 // ---------------------------------------------------------------------------
+// Swapped parameter order (common in obfuscators)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn binary_proxy_swapped_params() {
+    // `return t + n` — param[1] + param[0]
+    assert_eq!(
+        deobfuscate("function c(n, t) { return t + n; } var x = c(1, 2);"),
+        "var x = 3;"
+    );
+}
+
+#[test]
+fn binary_proxy_swapped_subtraction() {
+    // `return t - n` — param[1] - param[0], so c(3, 10) = 10 - 3 = 7
+    assert_eq!(
+        deobfuscate("function l(n, t) { return t - n; } var x = l(3, 10);"),
+        "var x = 7;"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Identity returning non-first parameter
+// ---------------------------------------------------------------------------
+
+#[test]
+fn identity_returns_second_param() {
+    // `function u(n, t) { return t; }` — returns param[1]
+    assert_eq!(
+        deobfuscate("function u(n, t) { return t; } var x = u(1, 42);"),
+        "var x = 42;"
+    );
+}
+
+#[test]
+fn identity_returns_first_param_with_extra() {
+    // `function P(n, t) { return n; }` — returns param[0], ignores param[1]
+    assert_eq!(
+        deobfuscate("function P(n, t) { return n; } var x = P(42, 1);"),
+        "var x = 42;"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // No-op cases: should not be inlined
 // ---------------------------------------------------------------------------
 

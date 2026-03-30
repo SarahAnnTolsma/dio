@@ -49,15 +49,25 @@ use crate::transformer::{AstNodeType, Transformer, TransformerPhase, Transformer
 /// The kind of proxy function detected.
 #[derive(Debug, Clone)]
 enum ProxyKind {
-    /// `function f(a, b) { return a <op> b; }`
-    Binary(BinaryOperator),
+    /// `function f(a, b) { return a <op> b; }` or swapped: `return b <op> a;`
+    /// Stores operator and the parameter indices for left and right operands.
+    Binary {
+        operator: BinaryOperator,
+        left_param_index: usize,
+        right_param_index: usize,
+    },
 
     /// `function f(callee, ...args) { return callee(...args); }`
     /// Stores the number of forwarded arguments (excluding the callee parameter).
     CallForwarding(usize),
 
-    /// `function f(a) { return a; }`
-    Identity,
+    /// Returns a single parameter, ignoring others.
+    /// `function f(a) { return a; }` or `function f(a, b) { return b; }`
+    /// Stores total param count and which parameter index is returned.
+    Identity {
+        param_count: usize,
+        returned_param_index: usize,
+    },
 }
 
 /// Information about a detected proxy function.
@@ -121,31 +131,58 @@ impl ProxyFunctionInliningTransformer {
 
         // Try to classify based on the return expression.
 
-        // Pattern 1: Identity — `function f(a) { return a; }`
-        if param_count == 1
-            && let Expression::Identifier(identifier) = return_expression
-                && is_parameter_reference(identifier, scope_id, 0, &params.items, context) {
+        // Pattern 1: Identity — returns a single parameter, ignoring others.
+        // `function f(a) { return a; }` or `function f(a, b) { return b; }`
+        if let Expression::Identifier(identifier) = return_expression {
+            for param_index in 0..param_count {
+                if is_parameter_reference(identifier, scope_id, param_index, &params.items, context)
+                {
                     return Some(ProxyFunction {
-                        kind: ProxyKind::Identity,
+                        kind: ProxyKind::Identity {
+                            param_count,
+                            returned_param_index: param_index,
+                        },
                     });
                 }
+            }
+        }
 
-        // Pattern 2: Binary — `function f(a, b) { return a <op> b; }`
-        if param_count == 2
-            && let Expression::BinaryExpression(binary) = return_expression {
+        // Pattern 2: Binary — `function f(a, b) { return a <op> b; }` or swapped
+        if param_count == 2 {
+            if let Expression::BinaryExpression(binary) = return_expression {
                 let left = unwrap_parens(&binary.left);
                 let right = unwrap_parens(&binary.right);
 
                 if let (Expression::Identifier(left_id), Expression::Identifier(right_id)) =
                     (left, right)
-                    && is_parameter_reference(left_id, scope_id, 0, &params.items, context)
-                        && is_parameter_reference(right_id, scope_id, 1, &params.items, context)
-                    {
-                        return Some(ProxyFunction {
-                            kind: ProxyKind::Binary(binary.operator),
-                        });
+                {
+                    // Check both orderings: (param[0] op param[1]) and (param[1] op param[0])
+                    for (left_index, right_index) in [(0, 1), (1, 0)] {
+                        if is_parameter_reference(
+                            left_id,
+                            scope_id,
+                            left_index,
+                            &params.items,
+                            context,
+                        ) && is_parameter_reference(
+                            right_id,
+                            scope_id,
+                            right_index,
+                            &params.items,
+                            context,
+                        ) {
+                            return Some(ProxyFunction {
+                                kind: ProxyKind::Binary {
+                                    operator: binary.operator,
+                                    left_param_index: left_index,
+                                    right_param_index: right_index,
+                                },
+                            });
+                        }
                     }
+                }
             }
+        }
 
         // Pattern 3: Call forwarding — `function f(callee, a, b, ...) { return callee(a, b, ...); }`
         if param_count >= 1
@@ -363,29 +400,44 @@ impl Transformer for ProxyFunctionInliningTransformer {
             .collect();
 
         match proxy_kind {
-            ProxyKind::Identity => {
-                // Replace `proxy(x)` with `x`.
-                if arguments.len() != 1 {
+            ProxyKind::Identity {
+                param_count,
+                returned_param_index,
+            } => {
+                // Replace `proxy(x)` with `x` or `proxy(a, b)` with the returned arg.
+                if arguments.len() != param_count {
                     return false;
                 }
-                if arguments[0].is_spread() {
+                if arguments.iter().any(|a| a.is_spread()) {
                     return false;
                 }
-                let replacement = arguments.remove(0).into_expression();
+                let replacement = arguments.remove(returned_param_index).into_expression();
                 operations::replace_expression(expression, replacement, context);
                 true
             }
 
-            ProxyKind::Binary(operator) => {
-                // Replace `proxy(a, b)` with `a <op> b`.
+            ProxyKind::Binary {
+                operator,
+                left_param_index,
+                right_param_index,
+            } => {
+                // Replace `proxy(a, b)` with `args[left] <op> args[right]`.
                 if arguments.len() != 2 {
                     return false;
                 }
                 if arguments[0].is_spread() || arguments[1].is_spread() {
                     return false;
                 }
-                let right = arguments.remove(1).into_expression();
-                let left = arguments.remove(0).into_expression();
+                // Extract in reverse order to avoid index shifting.
+                let max_index = left_param_index.max(right_param_index);
+                let min_index = left_param_index.min(right_param_index);
+                let max_expr = arguments.remove(max_index).into_expression();
+                let min_expr = arguments.remove(min_index).into_expression();
+                let (left, right) = if left_param_index < right_param_index {
+                    (min_expr, max_expr)
+                } else {
+                    (max_expr, min_expr)
+                };
                 let replacement =
                     context.ast.expression_binary(SPAN, left, operator, right);
                 operations::replace_expression(expression, replacement, context);
