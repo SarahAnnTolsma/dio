@@ -126,3 +126,119 @@ fn chained_string_from_char_code() {
         "f(\"test\");"
     );
 }
+
+// -- Number identity (already numeric argument) --
+
+#[test]
+fn number_identity_numeric() {
+    assert_eq!(deobfuscate("var x = Number(123); f(x);"), "f(123);");
+}
+
+// -- parseInt / parseFloat with numeric arguments --
+
+#[test]
+fn parse_int_numeric_integer() {
+    assert_eq!(deobfuscate("var x = parseInt(123); f(x);"), "f(123);");
+}
+
+#[test]
+fn parse_int_numeric_truncates() {
+    assert_eq!(deobfuscate("var x = parseInt(123.7); f(x);"), "f(123);");
+}
+
+#[test]
+fn parse_int_numeric_negative() {
+    assert_eq!(deobfuscate("var x = parseInt(-5.9); f(x);"), "f(-5);");
+}
+
+#[test]
+fn number_parse_int_numeric() {
+    assert_eq!(
+        deobfuscate("var x = Number.parseInt(42.8); f(x);"),
+        "f(42);"
+    );
+}
+
+#[test]
+fn parse_float_numeric_identity() {
+    assert_eq!(deobfuscate("var x = parseFloat(3.14); f(x);"), "f(3.14);");
+}
+
+#[test]
+fn parse_float_numeric_integer() {
+    assert_eq!(deobfuscate("var x = parseFloat(42); f(x);"), "f(42);");
+}
+
+#[test]
+fn number_parse_float_numeric() {
+    assert_eq!(
+        deobfuscate("var x = Number.parseFloat(2.5); f(x);"),
+        "f(2.5);"
+    );
+}
+
+// -- Math methods --
+
+#[test]
+fn math_ceil() {
+    assert_eq!(deobfuscate("var x = Math.ceil(1.5); f(x);"), "f(2);");
+}
+
+#[test]
+fn math_floor() {
+    assert_eq!(deobfuscate("var x = Math.floor(1.9); f(x);"), "f(1);");
+}
+
+#[test]
+fn math_round() {
+    assert_eq!(deobfuscate("var x = Math.round(1.5); f(x);"), "f(2);");
+}
+
+#[test]
+fn math_abs() {
+    assert_eq!(deobfuscate("var x = Math.abs(-5); f(x);"), "f(5);");
+}
+
+#[test]
+fn math_trunc() {
+    assert_eq!(deobfuscate("var x = Math.trunc(1.9); f(x);"), "f(1);");
+}
+
+#[test]
+fn math_sign_positive() {
+    assert_eq!(deobfuscate("var x = Math.sign(42); f(x);"), "f(1);");
+}
+
+#[test]
+fn math_sign_negative() {
+    assert_eq!(deobfuscate("var x = Math.sign(-42); f(x);"), "f(-1);");
+}
+
+#[test]
+fn math_sqrt() {
+    assert_eq!(deobfuscate("var x = Math.sqrt(9); f(x);"), "f(3);");
+}
+
+#[test]
+fn math_min() {
+    assert_eq!(deobfuscate("var x = Math.min(3, 1, 2); f(x);"), "f(1);");
+}
+
+#[test]
+fn math_max() {
+    assert_eq!(deobfuscate("var x = Math.max(3, 1, 2); f(x);"), "f(3);");
+}
+
+#[test]
+fn math_pow() {
+    assert_eq!(deobfuscate("var x = Math.pow(2, 10); f(x);"), "f(1024);");
+}
+
+#[test]
+fn math_skip_non_numeric_argument() {
+    // Non-numeric arguments should not be evaluated.
+    assert_eq!(
+        deobfuscate("var x = Math.ceil(y); f(x);"),
+        "var x = Math.ceil(y);\nf(x);"
+    );
+}

@@ -77,7 +77,7 @@ fn call_forwarding_proxy_multiple_arguments() {
         deobfuscate(
             "function _0x7(fn, a, b) { return fn(a, b); } f(_0x7(Math.max, 1, 2));"
         ),
-        "f(Math.max(1, 2));"
+        "f(2);"
     );
 }
 

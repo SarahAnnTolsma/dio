@@ -318,3 +318,19 @@ fn member_keeps_reserved_word() {
 fn member_numeric_key() {
     assert_eq!(deobfuscate("obj[\"0\"];"), "obj[\"0\"];");
 }
+
+#[test]
+fn member_assignment_lhs() {
+    assert_eq!(
+        deobfuscate("s[0][\"credentials\"] = \"include\";"),
+        "s[0].credentials = \"include\";"
+    );
+}
+
+#[test]
+fn member_assignment_lhs_simple() {
+    assert_eq!(
+        deobfuscate("obj[\"foo\"] = 1;"),
+        "obj.foo = 1;"
+    );
+}

@@ -6,8 +6,8 @@ Each transformer is grouped by category and implements the `Transformer` trait f
 
 - `constant/` — Constant folding and inlining (scope-aware).
 - `string/` — String literal concatenation.
-- `evaluation/` — Safe evaluation of known built-in functions (String.fromCharCode, parseInt, Number, Boolean, atob, btoa).
-- `simplification/` — Block normalization, comma expressions, member access, control flow, ternary-to-if, sequence statement hoisting.
+- `evaluation/` — Safe evaluation of known built-in functions (String.fromCharCode, parseInt, Number, Boolean, atob, btoa, Math methods).
+- `simplification/` — Block normalization, comma expressions, member access, control flow, ternary-to-if, sequence statement hoisting, global alias simplification.
 - `elimination/` — Dead code removal (finalize phase).
 - `renaming/` — Scope-aware variable renaming (finalize phase).
 

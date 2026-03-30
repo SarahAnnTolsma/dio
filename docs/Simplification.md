@@ -1,5 +1,38 @@
 # Simplification Transformers
 
+## GlobalAliasSimplificationTransformer
+
+Detects variables assigned to `window`, `self`, or `globalThis` that are never reassigned, and replaces member access through the alias with direct global references. The alias declaration is removed.
+
+```js
+// Before
+var wn = window;
+wn.Number("42");
+wn.Math.ceil(1.5);
+wn.document.getElementById("foo");
+
+// After
+Number("42");
+Math.ceil(1.5);
+document.getElementById("foo");
+```
+
+## FunctionDeclarationTransformer
+
+Converts variable declarations with anonymous function expression initializers into function declarations. Only applies when the variable is never reassigned and the function expression has no existing name.
+
+```js
+// Before
+var foo = function() { return 1; };
+var add = function(a, b) { return a + b; };
+var x = function named() { return 2; };  // not affected (named)
+
+// After
+function foo() { return 1; }
+function add(a, b) { return a + b; }
+var x = function named() { return 2; };  // unchanged
+```
+
 ## BitwiseSimplificationTransformer
 
 Simplifies complex bitwise and mixed boolean-arithmetic (MBA) expressions by evaluating them at multiple test points and matching the results against canonical operations. This handles arbitrary nesting and composition automatically — no manual pattern matching for each rewrite rule.

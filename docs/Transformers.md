@@ -39,10 +39,12 @@ Transformers that normalize and simplify control flow and expressions.
 
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
+| GlobalAliasSimplificationTransformer | Active | Main | Replaces member access through `window`/`self`/`globalThis` aliases with direct globals |
 | BitwiseSimplificationTransformer | Active | Main | Simplifies MBA expressions via truth table evaluation |
 | BlockNormalizationTransformer | Active | Main | Wraps bare control flow bodies in block statements |
 | CommaTransformer | Active | Main | Removes side-effect-free leading expressions from sequences |
 | ControlFlowTransformer | Active | Main | Simplifies if/else and ternaries with constant conditions |
+| FunctionDeclarationTransformer | Active | Main | Converts `var x = function() {}` to `function x() {}` |
 | MemberTransformer | Active | Main | Converts computed member access to dot notation |
 | LogicalToIfTransformer | Active | Main | Converts standalone logical &&/\|\| expressions to if statements |
 | SequenceStatementTransformer | Active | Main | Splits sequence expressions in expression statements and hoists leading expressions from sequences in return/if/while/throw/switch/for |

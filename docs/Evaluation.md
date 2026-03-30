@@ -96,6 +96,36 @@ var x = "Hello";
 var y = "aGVsbG8=";
 ```
 
+### Math methods
+
+Evaluates `Math.*` methods with numeric literal arguments.
+
+```js
+// Before
+var a = Math.ceil(1.5);
+var b = Math.floor(1.9);
+var c = Math.round(1.5);
+var d = Math.abs(-5);
+var e = Math.trunc(1.9);
+var f = Math.sign(-42);
+var g = Math.sqrt(9);
+var h = Math.min(3, 1, 2);
+var i = Math.max(3, 1, 2);
+var j = Math.pow(2, 10);
+
+// After
+var a = 2;
+var b = 1;
+var c = 2;
+var d = 5;
+var e = 1;
+var f = -1;
+var g = 3;
+var h = 1;
+var i = 3;
+var j = 1024;
+```
+
 ## LiteralMethodEvaluationTransformer
 
 Evaluates method calls and property accesses on string and array literals when all arguments are constant.

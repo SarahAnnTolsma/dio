@@ -1,8 +1,11 @@
 //! Simplifies computed member expressions to dot notation where possible.
 //!
 //! `obj["property"]` -> `obj.property` when the property is a valid JavaScript identifier.
+//!
+//! Handles both expression-position (`x["foo"]`) and assignment-target-position
+//! (`x["foo"] = value`) computed member expressions.
 
-use oxc_ast::ast::Expression;
+use oxc_ast::ast::{AssignmentTarget, Expression};
 use oxc_span::SPAN;
 use oxc_traverse::TraverseCtx;
 
@@ -18,7 +21,7 @@ impl Transformer for MemberTransformer {
     }
 
     fn interests(&self) -> &[AstNodeType] {
-        &[AstNodeType::MemberExpression]
+        &[AstNodeType::MemberExpression, AstNodeType::AssignmentExpression]
     }
 
     fn priority(&self) -> TransformerPriority {
@@ -34,37 +37,91 @@ impl Transformer for MemberTransformer {
         expression: &mut Expression<'a>,
         context: &mut TraverseCtx<'a, ()>,
     ) -> bool {
-        let Expression::ComputedMemberExpression(computed) = expression else {
-            return false;
-        };
-
-        let Expression::StringLiteral(property_literal) = &computed.expression else {
-            return false;
-        };
-
-        let property_name = property_literal.value.as_str();
-
-        if !is_valid_javascript_identifier(property_name) {
-            return false;
+        // Handle computed member in expression position: x["foo"] -> x.foo
+        if let Expression::ComputedMemberExpression(_) = expression {
+            return try_simplify_computed_member_expression(expression, context);
         }
 
-        let property_identifier = context.ast.identifier_name(SPAN, property_name);
+        // Handle computed member on the LHS of an assignment: x["foo"] = v -> x.foo = v
+        if let Expression::AssignmentExpression(assignment) = expression {
+            let AssignmentTarget::ComputedMemberExpression(computed) = &assignment.left else {
+                return false;
+            };
 
-        // Take the object out, replacing with a dummy.
-        let object = std::mem::replace(
-            &mut computed.object,
-            context.ast.expression_null_literal(SPAN),
-        );
-        let optional = computed.optional;
+            let Expression::StringLiteral(property_literal) = &computed.expression else {
+                return false;
+            };
 
-        let static_member =
-            context
-                .ast
-                .alloc_static_member_expression(SPAN, object, property_identifier, optional);
-        let replacement = Expression::StaticMemberExpression(static_member);
-        operations::replace_expression(expression, replacement, context);
-        true
+            let property_name = property_literal.value.as_str();
+            if !is_valid_javascript_identifier(property_name) {
+                return false;
+            }
+
+            let property_identifier = context.ast.identifier_name(SPAN, property_name);
+
+            // Re-borrow mutably to perform the replacement.
+            let Expression::AssignmentExpression(assignment) = expression else {
+                return false;
+            };
+            let AssignmentTarget::ComputedMemberExpression(computed) = &mut assignment.left else {
+                return false;
+            };
+
+            let object = std::mem::replace(
+                &mut computed.object,
+                context.ast.expression_null_literal(SPAN),
+            );
+            let optional = computed.optional;
+
+            let static_member = context.ast.alloc_static_member_expression(
+                SPAN,
+                object,
+                property_identifier,
+                optional,
+            );
+            assignment.left = AssignmentTarget::StaticMemberExpression(static_member);
+            return true;
+        }
+
+        false
     }
+}
+
+/// Simplify a computed member expression in expression position.
+fn try_simplify_computed_member_expression<'a>(
+    expression: &mut Expression<'a>,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    let Expression::ComputedMemberExpression(computed) = expression else {
+        return false;
+    };
+
+    let Expression::StringLiteral(property_literal) = &computed.expression else {
+        return false;
+    };
+
+    let property_name = property_literal.value.as_str();
+
+    if !is_valid_javascript_identifier(property_name) {
+        return false;
+    }
+
+    let property_identifier = context.ast.identifier_name(SPAN, property_name);
+
+    // Take the object out, replacing with a dummy.
+    let object = std::mem::replace(
+        &mut computed.object,
+        context.ast.expression_null_literal(SPAN),
+    );
+    let optional = computed.optional;
+
+    let static_member =
+        context
+            .ast
+            .alloc_static_member_expression(SPAN, object, property_identifier, optional);
+    let replacement = Expression::StaticMemberExpression(static_member);
+    operations::replace_expression(expression, replacement, context);
+    true
 }
 
 /// Check if a string is a valid JavaScript identifier (simplified).

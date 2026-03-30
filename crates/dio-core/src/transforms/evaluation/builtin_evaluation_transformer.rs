@@ -8,6 +8,10 @@
 //! - `Boolean(1)` / `Boolean("")` -> `true` / `false`
 //! - `atob("aGVsbG8=")` -> `"hello"`
 //! - `btoa("hello")` -> `"aGVsbG8="`
+//! - `Math.ceil(1.5)` -> `2`, `Math.floor(1.9)` -> `1`, `Math.round(1.5)` -> `2`
+//! - `Math.abs(-5)` -> `5`, `Math.trunc(1.9)` -> `1`
+//! - `Math.min(1, 2)` -> `1`, `Math.max(1, 2)` -> `2`
+//! - `Math.sign(-5)` -> `-1`, `Math.sqrt(9)` -> `3`
 
 use oxc_ast::ast::Expression;
 use oxc_span::SPAN;
@@ -57,6 +61,12 @@ impl Transformer for BuiltinEvaluationTransformer {
             return try_evaluate_parse_float(expression, context);
         }
 
+        // Check for Math method calls. Copy the method name to avoid borrow conflict.
+        if let Some(method_name) = get_static_member_method(&call.callee, "Math") {
+            let method_name = method_name.to_string();
+            return try_evaluate_math_method(expression, &method_name, context);
+        }
+
         // Check for global function calls.
         if let Expression::Identifier(identifier) = &call.callee {
             match identifier.name.as_str() {
@@ -82,6 +92,19 @@ fn is_static_member_call(callee: &Expression<'_>, object_name: &str, method_name
                 return identifier.name.as_str() == object_name;
             }
     false
+}
+
+/// If the callee is `ObjectName.methodName`, return the method name.
+fn get_static_member_method<'a>(
+    callee: &'a Expression<'_>,
+    object_name: &str,
+) -> Option<&'a str> {
+    if let Expression::StaticMemberExpression(member) = callee
+        && let Expression::Identifier(identifier) = &member.object
+            && identifier.name.as_str() == object_name {
+                return Some(member.property.name.as_str());
+            }
+    None
 }
 
 /// `String.fromCharCode(72, 101, 108)` -> `"Hel"`
@@ -130,6 +153,29 @@ fn try_evaluate_parse_int<'a>(
     let Some(first_argument) = call.arguments[0].as_expression() else {
         return false;
     };
+
+    // parseInt with a numeric literal: truncate to integer.
+    // JS converts to string first, so parseInt(123.7) → 123.
+    if let Expression::NumericLiteral(number) = first_argument {
+        if call.arguments.len() > 1 {
+            // parseInt(numericLiteral, radix) is unusual — skip to be safe.
+            return false;
+        }
+        let value = number.value;
+        if !value.is_finite() {
+            return false;
+        }
+        let result = value.trunc() as i64;
+        let result_f64 = result as f64;
+        let raw = context.ast.atom(&result.to_string());
+        let replacement =
+            context
+                .ast
+                .expression_numeric_literal(SPAN, result_f64, Some(raw), NumberBase::Decimal);
+        operations::replace_expression(expression, replacement, context);
+        return true;
+    }
+
     let Expression::StringLiteral(string_value) = first_argument else {
         return false;
     };
@@ -209,6 +255,22 @@ fn try_evaluate_parse_float<'a>(
     let Some(first_argument) = call.arguments[0].as_expression() else {
         return false;
     };
+
+    // parseFloat with a numeric literal is an identity operation.
+    if let Expression::NumericLiteral(number) = first_argument {
+        let value = number.value;
+        if !value.is_finite() {
+            return false;
+        }
+        let raw = context.ast.atom(&format_number(value));
+        let replacement =
+            context
+                .ast
+                .expression_numeric_literal(SPAN, value, Some(raw), NumberBase::Decimal);
+        operations::replace_expression(expression, replacement, context);
+        return true;
+    }
+
     let Expression::StringLiteral(string_value) = first_argument else {
         return false;
     };
@@ -373,6 +435,110 @@ fn try_evaluate_boolean<'a>(
     };
 
     let replacement = context.ast.expression_boolean_literal(SPAN, result);
+    operations::replace_expression(expression, replacement, context);
+    true
+}
+
+/// Evaluates `Math.*` method calls with numeric literal arguments.
+fn try_evaluate_math_method<'a>(
+    expression: &mut Expression<'a>,
+    method_name: &str,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    let Expression::CallExpression(call) = expression else {
+        return false;
+    };
+
+    if call.arguments.is_empty() {
+        return false;
+    }
+
+    // Extract all numeric arguments.
+    let mut numeric_arguments = Vec::new();
+    for argument in &call.arguments {
+        let Some(argument_expression) = argument.as_expression() else {
+            return false;
+        };
+        let Expression::NumericLiteral(number) = argument_expression else {
+            return false;
+        };
+        numeric_arguments.push(number.value);
+    }
+
+    let result = match method_name {
+        // Single-argument methods.
+        "ceil" if numeric_arguments.len() == 1 => numeric_arguments[0].ceil(),
+        "floor" if numeric_arguments.len() == 1 => numeric_arguments[0].floor(),
+        "round" if numeric_arguments.len() == 1 => numeric_arguments[0].round(),
+        "abs" if numeric_arguments.len() == 1 => numeric_arguments[0].abs(),
+        "trunc" if numeric_arguments.len() == 1 => numeric_arguments[0].trunc(),
+        "sign" if numeric_arguments.len() == 1 => {
+            let value = numeric_arguments[0];
+            if value > 0.0 {
+                1.0
+            } else if value < 0.0 {
+                -1.0
+            } else {
+                value // preserves +0/-0/NaN
+            }
+        }
+        "sqrt" if numeric_arguments.len() == 1 => {
+            let result = numeric_arguments[0].sqrt();
+            if !result.is_finite() {
+                return false;
+            }
+            result
+        }
+        "log" if numeric_arguments.len() == 1 => {
+            let result = numeric_arguments[0].ln();
+            if !result.is_finite() {
+                return false;
+            }
+            result
+        }
+        "log2" if numeric_arguments.len() == 1 => {
+            let result = numeric_arguments[0].log2();
+            if !result.is_finite() {
+                return false;
+            }
+            result
+        }
+        "log10" if numeric_arguments.len() == 1 => {
+            let result = numeric_arguments[0].log10();
+            if !result.is_finite() {
+                return false;
+            }
+            result
+        }
+        // Multi-argument methods.
+        "min" if !numeric_arguments.is_empty() => {
+            numeric_arguments.iter().copied().fold(f64::INFINITY, f64::min)
+        }
+        "max" if !numeric_arguments.is_empty() => {
+            numeric_arguments
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max)
+        }
+        "pow" if numeric_arguments.len() == 2 => {
+            let result = numeric_arguments[0].powf(numeric_arguments[1]);
+            if !result.is_finite() {
+                return false;
+            }
+            result
+        }
+        _ => return false,
+    };
+
+    if !result.is_finite() {
+        return false;
+    }
+
+    let raw = context.ast.atom(&format_number(result));
+    let replacement =
+        context
+            .ast
+            .expression_numeric_literal(SPAN, result, Some(raw), NumberBase::Decimal);
     operations::replace_expression(expression, replacement, context);
     true
 }
