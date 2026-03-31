@@ -6,48 +6,48 @@ use common::deobfuscate;
 #[test]
 fn window_alias_member_access() {
     assert_eq!(
-        deobfuscate("var wn = window; wn.Number(\"42\");"),
-        "42;"
+        deobfuscate("var wn = window; f(wn.Number(\"42\"));"),
+        "f(42);"
     );
 }
 
 #[test]
 fn window_alias_math_method() {
     assert_eq!(
-        deobfuscate("var wn = window; wn.Math.ceil(1.5);"),
-        "2;"
+        deobfuscate("var wn = window; f(wn.Math.ceil(1.5));"),
+        "f(2);"
     );
 }
 
 #[test]
 fn window_alias_parse_int() {
     assert_eq!(
-        deobfuscate("var wn = window; wn.parseInt(\"10\");"),
-        "10;"
+        deobfuscate("var wn = window; f(wn.parseInt(\"10\"));"),
+        "f(10);"
     );
 }
 
 #[test]
 fn window_alias_multiple_references() {
     assert_eq!(
-        deobfuscate("var wn = window; wn.Number(\"1\"); wn.Boolean(0);"),
-        "1;\nfalse;"
+        deobfuscate("var wn = window; f(wn.Number(\"1\")); g(wn.Boolean(0));"),
+        "f(1);\ng(false);"
     );
 }
 
 #[test]
 fn self_alias() {
     assert_eq!(
-        deobfuscate("var s = self; s.Number(\"5\");"),
-        "5;"
+        deobfuscate("var s = self; f(s.Number(\"5\"));"),
+        "f(5);"
     );
 }
 
 #[test]
 fn global_this_alias() {
     assert_eq!(
-        deobfuscate("var g = globalThis; g.parseInt(\"16\", 16);"),
-        "22;"
+        deobfuscate("var g = globalThis; f(g.parseInt(\"16\", 16));"),
+        "f(22);"
     );
 }
 

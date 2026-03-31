@@ -70,26 +70,89 @@ impl Transformer for ControlFlowTransformer {
             return false;
         };
 
-        let Some(is_truthy) = evaluate_as_boolean(&if_statement.test) else {
-            return false;
-        };
-
-        if is_truthy {
-            let consequent = std::mem::replace(
-                &mut if_statement.consequent,
-                context.ast.statement_empty(SPAN),
-            );
-            let unwrapped = unwrap_single_statement_block(consequent);
-            operations::replace_statement(statement, unwrapped, context);
-        } else if let Some(alternate) = &mut if_statement.alternate {
-            let alternate = std::mem::replace(alternate, context.ast.statement_empty(SPAN));
-            let unwrapped = unwrap_single_statement_block(alternate);
-            operations::replace_statement(statement, unwrapped, context);
-        } else {
-            operations::remove_statement(statement, context);
+        // Constant condition — replace with the taken branch.
+        if let Some(is_truthy) = evaluate_as_boolean(&if_statement.test) {
+            if is_truthy {
+                let consequent = std::mem::replace(
+                    &mut if_statement.consequent,
+                    context.ast.statement_empty(SPAN),
+                );
+                let unwrapped = unwrap_single_statement_block(consequent);
+                operations::replace_statement(statement, unwrapped, context);
+            } else if let Some(alternate) = &mut if_statement.alternate {
+                let alternate = std::mem::replace(alternate, context.ast.statement_empty(SPAN));
+                let unwrapped = unwrap_single_statement_block(alternate);
+                operations::replace_statement(statement, unwrapped, context);
+            } else {
+                operations::remove_statement(statement, context);
+            }
+            return true;
         }
 
-        true
+        // Empty consequent and alternate — remove the if entirely, keep the
+        // test as an expression statement in case it has side effects.
+        let consequent_empty = is_empty_body(&if_statement.consequent);
+        let alternate_empty = if_statement
+            .alternate
+            .as_ref()
+            .map_or(true, |alternate| is_empty_body(alternate));
+
+        if consequent_empty && alternate_empty {
+            // Replace `if (test) {} else {}` with `test;`
+            let test = std::mem::replace(
+                &mut if_statement.test,
+                context.ast.expression_null_literal(SPAN),
+            );
+            let replacement = context.ast.statement_expression(SPAN, test);
+            operations::replace_statement(statement, replacement, context);
+            return true;
+        }
+
+        // Empty alternate — remove the else branch.
+        if !consequent_empty && !alternate_empty {
+            // Both non-empty, nothing to simplify.
+            return false;
+        }
+
+        if !consequent_empty && alternate_empty && if_statement.alternate.is_some() {
+            // `if (test) { body } else {}` → `if (test) { body }`
+            let Statement::IfStatement(if_statement) = statement else {
+                return false;
+            };
+            if_statement.alternate = None;
+            return true;
+        }
+
+        if consequent_empty && !alternate_empty {
+            // `if (test) {} else { body }` → `if (!test) { body }`
+            let Statement::IfStatement(if_statement) = statement else {
+                return false;
+            };
+            let test = std::mem::replace(
+                &mut if_statement.test,
+                context.ast.expression_null_literal(SPAN),
+            );
+            let negated = context.ast.expression_unary(
+                SPAN,
+                oxc_syntax::operator::UnaryOperator::LogicalNot,
+                test,
+            );
+            if_statement.test = negated;
+            let alternate = if_statement.alternate.take().unwrap();
+            if_statement.consequent = alternate;
+            return true;
+        }
+
+        false
+    }
+}
+
+/// Check if a statement body is effectively empty (empty block or empty statement).
+fn is_empty_body(statement: &Statement<'_>) -> bool {
+    match statement {
+        Statement::EmptyStatement(_) => true,
+        Statement::BlockStatement(block) => block.body.is_empty(),
+        _ => false,
     }
 }
 

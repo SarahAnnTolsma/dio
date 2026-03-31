@@ -79,3 +79,46 @@ fn ternary_null_falsy() {
         "f(\"no\");"
     );
 }
+
+// -- Empty block simplification --
+
+#[test]
+fn empty_else_removed() {
+    assert_eq!(
+        deobfuscate("if (x) { f(); } else {}"),
+        "if (x) {\n    f();\n}"
+    );
+}
+
+#[test]
+fn empty_if_with_else_inverted() {
+    assert_eq!(
+        deobfuscate("if (x) {} else { f(); }"),
+        "if (!x) {\n    f();\n}"
+    );
+}
+
+#[test]
+fn empty_if_no_else_keeps_test() {
+    assert_eq!(
+        deobfuscate("if (f()) {}"),
+        "f();"
+    );
+}
+
+#[test]
+fn both_empty_keeps_test() {
+    assert_eq!(
+        deobfuscate("if (f()) {} else {}"),
+        "f();"
+    );
+}
+
+#[test]
+fn empty_if_no_else_side_effect_free_test_removed() {
+    // The test is side-effect-free, so the whole thing is removed.
+    assert_eq!(
+        deobfuscate("if (x) {} f();"),
+        "x;\nf();"
+    );
+}

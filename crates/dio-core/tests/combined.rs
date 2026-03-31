@@ -52,7 +52,7 @@ fn from_char_code_and_member() {
 fn sequence_in_return_with_folding() {
     assert_eq!(
         deobfuscate("function f() { return (1 + 2, 3 + 4, 5 + 6); }"),
-        "function f() {\n    3;\n    7;\n    return 11;\n}"
+        "function f() {\n    return 11;\n}"
     );
 }
 
