@@ -6,11 +6,13 @@
 //! They are only enabled via the `ObfuscatorIo` preset.
 
 mod control_flow_array_transformer;
+mod control_flow_flattening_transformer;
 mod string_array_decoder_transformer;
 mod string_array_rc4_decoder_transformer;
 mod string_array_rotation_transformer;
 
 pub use control_flow_array_transformer::ControlFlowArrayTransformer;
+pub use control_flow_flattening_transformer::ControlFlowFlatteningTransformer;
 pub use string_array_decoder_transformer::StringArrayDecoderTransformer;
 pub use string_array_rc4_decoder_transformer::StringArrayRC4DecoderTransformer;
 pub use string_array_rotation_transformer::StringArrayRotationTransformer;

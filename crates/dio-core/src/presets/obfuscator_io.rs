@@ -35,6 +35,10 @@ pub fn transformers() -> Vec<Box<dyn Transformer>> {
         Box::new(transforms::obfuscator_io::ControlFlowArrayTransformer::default())
             as Box<dyn Transformer>,
     );
+    result.push(
+        Box::new(transforms::obfuscator_io::ControlFlowFlatteningTransformer)
+            as Box<dyn Transformer>,
+    );
 
     // Then all general-purpose transforms.
     result.extend(transforms::default_transformers());
