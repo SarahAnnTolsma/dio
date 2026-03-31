@@ -21,6 +21,40 @@ pub fn base64_decode_with_alphabet(input: &str, alphabet: &[u8]) -> Option<Strin
     decode_base64_impl(input, alphabet, false)
 }
 
+/// Decode base64 to raw bytes (no Latin-1 string conversion).
+fn base64_decode_to_bytes(input: &str, alphabet: &[u8]) -> Option<Vec<u8>> {
+    if alphabet.len() != 64 && alphabet.len() != 65 {
+        return None;
+    }
+
+    let mut lookup = [255u8; 256];
+    for (index, &byte) in alphabet.iter().enumerate() {
+        lookup[byte as usize] = index as u8;
+    }
+
+    let mut output = Vec::new();
+    let mut buffer: u32 = 0;
+    let mut bits_collected: u32 = 0;
+
+    for byte in input.bytes() {
+        let value = lookup[byte as usize];
+        if value == 255 || value >= 64 {
+            continue;
+        }
+
+        buffer = (buffer << 6) | u32::from(value);
+        bits_collected += 6;
+
+        if bits_collected >= 8 {
+            bits_collected -= 8;
+            output.push((buffer >> bits_collected) as u8);
+            buffer &= (1 << bits_collected) - 1;
+        }
+    }
+
+    Some(output)
+}
+
 fn decode_base64_impl(input: &str, alphabet: &[u8], stop_at_equals: bool) -> Option<String> {
     // Accept 64-char alphabets (standard) or 65-char alphabets where the
     // 65th character is the padding sentinel (common in obfuscators).
@@ -95,6 +129,63 @@ pub fn base64_encode(input: &[u8]) -> String {
     output
 }
 
+/// Base64 alphabet used by Obfuscator.io's RC4 decoder (lowercase first).
+const OBFUSCATOR_IO_BASE64_ALPHABET: &[u8; 65] =
+    b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=";
+
+/// Decode a base64-encoded string and then RC4-decrypt it with the given key.
+///
+/// Matches the Obfuscator.io "high" obfuscation pattern where each string
+/// array entry is base64-encoded, then RC4-encrypted using a per-call key.
+/// Uses the lowercase-first base64 alphabet specific to Obfuscator.io.
+pub fn base64_rc4_decode(encoded: &str, key: &str) -> Option<String> {
+    // Step 1: Base64 decode to raw bytes using the Obfuscator.io-specific alphabet.
+    let bytes = base64_decode_to_bytes(encoded, OBFUSCATOR_IO_BASE64_ALPHABET)?;
+
+    // Step 2: RC4 decrypt.
+    let decrypted = rc4_decrypt(&bytes, key.as_bytes());
+
+    // Step 3: Interpret as UTF-8 (fall back to Latin-1).
+    match String::from_utf8(decrypted.clone()) {
+        Ok(string) => Some(string),
+        Err(_) => Some(decrypted.iter().map(|&b| b as char).collect()),
+    }
+}
+
+/// RC4 stream cipher decryption (symmetric — encryption and decryption are the same).
+fn rc4_decrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
+    if key.is_empty() {
+        return data.to_vec();
+    }
+
+    // Key-Scheduling Algorithm (KSA)
+    let mut state = [0u8; 256];
+    for i in 0..256 {
+        state[i] = i as u8;
+    }
+    let mut j: u8 = 0;
+    for i in 0..256 {
+        j = j
+            .wrapping_add(state[i])
+            .wrapping_add(key[i % key.len()]);
+        state.swap(i, j as usize);
+    }
+
+    // Pseudo-Random Generation Algorithm (PRGA)
+    let mut output = Vec::with_capacity(data.len());
+    let mut i: u8 = 0;
+    let mut j: u8 = 0;
+    for &byte in data {
+        i = i.wrapping_add(1);
+        j = j.wrapping_add(state[i as usize]);
+        state.swap(i as usize, j as usize);
+        let keystream_byte = state[(state[i as usize].wrapping_add(state[j as usize])) as usize];
+        output.push(byte ^ keystream_byte);
+    }
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +203,25 @@ mod tests {
         let result = base64_decode_with_alphabet("u3ge5zPP", alphabet).unwrap();
         // This should decode to a valid string using the custom alphabet
         assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn base64_rc4_decode_raw_bytes() {
+        // "WOXYW5Daxq" decoded with lowercase-first alphabet gives bytes [194,140,114,195,151,64,93]
+        let bytes =
+            super::base64_decode_to_bytes("WOXYW5Daxq", super::OBFUSCATOR_IO_BASE64_ALPHABET)
+                .unwrap();
+        assert_eq!(bytes, vec![194, 140, 114, 195, 151, 64, 93]);
+    }
+
+    #[test]
+    fn rc4_decrypt_basic() {
+        // Verify RC4 is symmetric: encrypt then decrypt should give original
+        let data = b"Hello, World!";
+        let key = b"test_key";
+        let encrypted = super::rc4_decrypt(data, key);
+        let decrypted = super::rc4_decrypt(&encrypted, key);
+        assert_eq!(decrypted, data);
     }
 
     #[test]
