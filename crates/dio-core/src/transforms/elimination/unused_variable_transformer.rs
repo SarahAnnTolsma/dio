@@ -64,57 +64,88 @@ impl Transformer for UnusedVariableTransformer {
         let mut changed = false;
 
         for index in (0..statements.len()).rev() {
-            let Statement::VariableDeclaration(declaration) = &statements[index] else {
-                continue;
-            };
+            match &statements[index] {
+                Statement::VariableDeclaration(declaration) => {
+                    let total = declaration.declarations.len();
+                    let unreferenced_count = declaration
+                        .declarations
+                        .iter()
+                        .filter(|d| is_removable_declarator(d, context))
+                        .count();
 
-            // Check each declarator: removable if unreferenced AND the
-            // initializer is side-effect-free (literal, array of literals,
-            // or absent). We never remove declarations whose initializer
-            // might have side effects (function calls, property access, etc.).
-            let total = declaration.declarations.len();
-            let unreferenced_count = declaration
-                .declarations
-                .iter()
-                .filter(|declarator| is_removable_declarator(declarator, context))
-                .count();
+                    if unreferenced_count == 0 {
+                        continue;
+                    }
 
-            if unreferenced_count == 0 {
-                continue;
-            }
+                    if unreferenced_count == total {
+                        operations::remove_statement_at(statements, index, context);
+                        changed = true;
+                    } else {
+                        let old_statement = std::mem::replace(
+                            &mut statements[index],
+                            context.ast.statement_empty(SPAN),
+                        );
+                        let Statement::VariableDeclaration(mut old_declaration) = old_statement
+                        else {
+                            unreachable!();
+                        };
 
-            if unreferenced_count == total {
-                // All declarators are unreferenced — remove the entire statement.
-                operations::remove_statement_at(statements, index, context);
-                changed = true;
-            } else {
-                // Partial — rebuild without the unreferenced declarators.
-                let old_statement = std::mem::replace(
-                    &mut statements[index],
-                    context.ast.statement_empty(SPAN),
-                );
-                let Statement::VariableDeclaration(mut old_declaration) = old_statement else {
-                    unreachable!();
-                };
+                        let kind = old_declaration.kind;
+                        let kept: Vec<_> = old_declaration
+                            .declarations
+                            .drain(..)
+                            .filter(|d| !is_removable_declarator(d, context))
+                            .collect();
 
-                let kind = old_declaration.kind;
-                let kept: Vec<_> = old_declaration
-                    .declarations
-                    .drain(..)
-                    .filter(|declarator| !is_removable_declarator(declarator, context))
-                    .collect();
+                        let mut new_declarations = context.ast.vec_with_capacity(kept.len());
+                        for declarator in kept {
+                            new_declarations.push(declarator);
+                        }
 
-                let mut new_declarations = context.ast.vec_with_capacity(kept.len());
-                for declarator in kept {
-                    new_declarations.push(declarator);
+                        statements[index] = Statement::VariableDeclaration(context.ast.alloc(
+                            context
+                                .ast
+                                .variable_declaration(SPAN, kind, new_declarations, false),
+                        ));
+                        changed = true;
+                    }
                 }
+                Statement::ForStatement(_) => {
+                    // Remove unused declarators from for-statement inits.
+                    let Statement::ForStatement(for_statement) = &mut statements[index] else {
+                        unreachable!();
+                    };
+                    let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(declaration)) =
+                        &mut for_statement.init
+                    else {
+                        continue;
+                    };
 
-                statements[index] = Statement::VariableDeclaration(context.ast.alloc(
-                    context
-                        .ast
-                        .variable_declaration(SPAN, kind, new_declarations, false),
-                ));
-                changed = true;
+                    let unreferenced_count = declaration
+                        .declarations
+                        .iter()
+                        .filter(|d| is_removable_declarator(d, context))
+                        .count();
+
+                    if unreferenced_count == 0 {
+                        continue;
+                    }
+
+                    // Remove unreferenced declarators from the init in-place.
+                    let removable_indices: Vec<usize> = declaration
+                        .declarations
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, d)| is_removable_declarator(d, context))
+                        .map(|(i, _)| i)
+                        .collect();
+
+                    for &idx in removable_indices.iter().rev() {
+                        declaration.declarations.remove(idx);
+                    }
+                    changed = true;
+                }
+                _ => {}
             }
         }
 

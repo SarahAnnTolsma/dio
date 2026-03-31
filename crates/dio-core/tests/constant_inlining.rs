@@ -120,10 +120,9 @@ fn skip_unreferenced_variable() {
 
 #[test]
 fn inline_from_for_init() {
-    // The constant c is inlined, leaving an empty `var c` in the for-init.
     assert_eq!(
         deobfuscate("for (var c = 42, i = 0; i < 10; i++) {} f(c);"),
-        "for (var c, i = 0; i < 10; i++) {}\nf(42);"
+        "for (var i = 0; i < 10; i++) {}\nf(42);"
     );
 }
 
