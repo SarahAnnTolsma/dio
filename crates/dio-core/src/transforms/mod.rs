@@ -22,6 +22,7 @@ pub fn default_transformers() -> Vec<Box<dyn Transformer>> {
         // Main phase, First priority
         Box::new(simplification::VariableDeclarationSplitTransformer),
         Box::new(simplification::GlobalAliasSimplificationTransformer::default()),
+        Box::new(simplification::DeclarationMergeTransformer),
         Box::new(constant::ConstantInliningTransformer::default()),
         Box::new(inlining::ProxyFunctionInliningTransformer::default()),
         // Main phase, Default priority
