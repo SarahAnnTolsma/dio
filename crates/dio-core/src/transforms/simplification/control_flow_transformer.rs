@@ -41,6 +41,32 @@ impl Transformer for ControlFlowTransformer {
             return false;
         };
 
+        // `cond ? true : false` → `cond`
+        // `cond ? false : true` → `!cond`
+        let consequent_bool = evaluate_as_boolean(&conditional.consequent);
+        let alternate_bool = evaluate_as_boolean(&conditional.alternate);
+        if let (Some(true), Some(false)) = (consequent_bool, alternate_bool) {
+            let test = std::mem::replace(
+                &mut conditional.test,
+                context.ast.expression_null_literal(SPAN),
+            );
+            operations::replace_expression(expression, test, context);
+            return true;
+        }
+        if let (Some(false), Some(true)) = (consequent_bool, alternate_bool) {
+            let test = std::mem::replace(
+                &mut conditional.test,
+                context.ast.expression_null_literal(SPAN),
+            );
+            let negated = context.ast.expression_unary(
+                SPAN,
+                oxc_syntax::operator::UnaryOperator::LogicalNot,
+                test,
+            );
+            operations::replace_expression(expression, negated, context);
+            return true;
+        }
+
         let Some(is_truthy) = evaluate_as_boolean(&conditional.test) else {
             return false;
         };

@@ -11,6 +11,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// Converts expression statements containing a single ternary into if/else.
 pub struct TernaryToIfTransformer;
@@ -41,18 +42,22 @@ impl Transformer for TernaryToIfTransformer {
             return false;
         };
 
+        // Check if the expression (possibly wrapped in parens) is a ternary.
         if !matches!(
-            expression_statement.expression,
+            unwrap_parens(&expression_statement.expression),
             Expression::ConditionalExpression(_)
         ) {
             return false;
         }
 
-        // Take the conditional expression out of the expression statement.
-        let expression = std::mem::replace(
+        // Take the expression out and unwrap any parentheses to get the conditional.
+        let mut expression = std::mem::replace(
             &mut expression_statement.expression,
             context.ast.expression_null_literal(SPAN),
         );
+        while let Expression::ParenthesizedExpression(paren) = expression {
+            expression = paren.unbox().expression;
+        }
         let Expression::ConditionalExpression(conditional) = expression else {
             unreachable!();
         };
