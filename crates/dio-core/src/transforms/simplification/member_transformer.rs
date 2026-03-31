@@ -124,9 +124,12 @@ fn try_simplify_computed_member_expression<'a>(
     true
 }
 
-/// Check if a string is a valid JavaScript identifier (simplified).
+/// Check if a string is a valid JavaScript property name in dot notation.
+///
+/// Reserved words are valid as property names in ES5+ (e.g., `obj.catch`,
+/// `obj.class`, `obj.return`), so we only check identifier syntax.
 fn is_valid_javascript_identifier(name: &str) -> bool {
-    if name.is_empty() || is_javascript_reserved_word(name) {
+    if name.is_empty() {
         return false;
     }
 
@@ -137,52 +140,4 @@ fn is_valid_javascript_identifier(name: &str) -> bool {
     }
 
     characters.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-}
-
-fn is_javascript_reserved_word(name: &str) -> bool {
-    matches!(
-        name,
-        "break"
-            | "case"
-            | "catch"
-            | "continue"
-            | "debugger"
-            | "default"
-            | "delete"
-            | "do"
-            | "else"
-            | "finally"
-            | "for"
-            | "function"
-            | "if"
-            | "in"
-            | "instanceof"
-            | "new"
-            | "return"
-            | "switch"
-            | "this"
-            | "throw"
-            | "try"
-            | "typeof"
-            | "var"
-            | "void"
-            | "while"
-            | "with"
-            | "class"
-            | "const"
-            | "enum"
-            | "export"
-            | "extends"
-            | "import"
-            | "super"
-            | "implements"
-            | "interface"
-            | "let"
-            | "package"
-            | "private"
-            | "protected"
-            | "public"
-            | "static"
-            | "yield"
-    )
 }

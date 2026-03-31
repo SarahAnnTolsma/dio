@@ -310,8 +310,9 @@ fn member_keeps_invalid_identifier() {
 }
 
 #[test]
-fn member_keeps_reserved_word() {
-    assert_eq!(deobfuscate("obj[\"class\"];"), "obj[\"class\"];");
+fn member_converts_reserved_word() {
+    // Reserved words are valid as property names in ES5+.
+    assert_eq!(deobfuscate("f(obj[\"class\"]); g(obj[\"catch\"]);"), "f(obj.class);\ng(obj.catch);");
 }
 
 #[test]
