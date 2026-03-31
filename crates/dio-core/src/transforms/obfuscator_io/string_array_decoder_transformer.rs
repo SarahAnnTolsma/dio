@@ -85,8 +85,6 @@ enum RawArrayElement {
     Number(f64),
     Boolean(bool),
     Null,
-    /// Non-literal element (function call, identifier, etc.) — skip.
-    NonLiteral,
 }
 
 impl StringArrayDecoderTransformer {
@@ -119,11 +117,15 @@ impl StringArrayDecoderTransformer {
                             continue;
                         }
                     }
-                    elements.push(RawArrayElement::NonLiteral);
+                    // Any other unary expression (e.g., `!0`, `!1`) is non-literal.
+                    // Let constant folding simplify it first; we'll pick it up on
+                    // the next convergence pass.
+                    return None;
                 }
                 _ => {
-                    // Function calls, identifiers, etc. — mark as non-literal.
-                    elements.push(RawArrayElement::NonLiteral);
+                    // Function calls, identifiers, etc. — bail out and let other
+                    // transformers simplify the array first.
+                    return None;
                 }
             }
         }
@@ -235,11 +237,6 @@ impl StringArrayDecoderTransformer {
                 RawArrayElement::Number(value) => DecodedValue::Number(*value),
                 RawArrayElement::Boolean(value) => DecodedValue::Boolean(*value),
                 RawArrayElement::Null => DecodedValue::Null,
-                RawArrayElement::NonLiteral => {
-                    // Can't pre-decode non-literal elements; leave a placeholder.
-                    // Call sites referencing these indices won't be replaced.
-                    DecodedValue::Null
-                }
             })
             .collect()
     }
