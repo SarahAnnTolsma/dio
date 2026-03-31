@@ -17,6 +17,12 @@ pub fn transformers() -> Vec<Box<dyn Transformer>> {
     let mut result = Vec::new();
 
     // Obfuscator.io-specific transforms run first.
+    // RC4 decoder must run before other string array transformers since they
+    // might incorrectly consume the rotation IIFE.
+    result.push(
+        Box::new(transforms::obfuscator_io::StringArrayRC4DecoderTransformer::default())
+            as Box<dyn Transformer>,
+    );
     result.push(
         Box::new(transforms::obfuscator_io::StringArrayDecoderTransformer::default())
             as Box<dyn Transformer>,
@@ -27,10 +33,6 @@ pub fn transformers() -> Vec<Box<dyn Transformer>> {
     );
     result.push(
         Box::new(transforms::obfuscator_io::ControlFlowArrayTransformer::default())
-            as Box<dyn Transformer>,
-    );
-    result.push(
-        Box::new(transforms::obfuscator_io::StringArrayRC4DecoderTransformer::default())
             as Box<dyn Transformer>,
     );
 

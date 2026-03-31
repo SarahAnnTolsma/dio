@@ -138,14 +138,34 @@ const OBFUSCATOR_IO_BASE64_ALPHABET: &[u8; 65] =
 /// Matches the Obfuscator.io "high" obfuscation pattern where each string
 /// array entry is base64-encoded, then RC4-encrypted using a per-call key.
 /// Uses the lowercase-first base64 alphabet specific to Obfuscator.io.
+///
+/// The JS decoder chain is:
+/// 1. Base64 decode to raw bytes
+/// 2. Percent-encode each byte and `decodeURIComponent` to get a UTF-8 string
+/// 3. RC4 decrypt treating character codes as the data stream
 pub fn base64_rc4_decode(encoded: &str, key: &str) -> Option<String> {
-    // Step 1: Base64 decode to raw bytes using the Obfuscator.io-specific alphabet.
+    // Step 1: Base64 decode to raw bytes.
     let bytes = base64_decode_to_bytes(encoded, OBFUSCATOR_IO_BASE64_ALPHABET)?;
 
-    // Step 2: RC4 decrypt.
-    let decrypted = rc4_decrypt(&bytes, key.as_bytes());
+    // Step 2: Interpret the raw bytes as UTF-8 (matching JS decodeURIComponent
+    // on percent-encoded bytes). This converts multi-byte UTF-8 sequences into
+    // single characters.
+    let utf8_string = String::from_utf8(bytes).ok()?;
 
-    // Step 3: Interpret as UTF-8 (fall back to Latin-1).
+    // Step 3: RC4 decrypt on the character codes.
+    // The JS decoder operates on charCodeAt values, so we collect char codes
+    // as bytes for RC4 (char codes > 255 would be unusual in this context).
+    let char_codes: Vec<u8> = utf8_string
+        .chars()
+        .map(|character| character as u32 as u8)
+        .collect();
+    let key_bytes: Vec<u8> = key
+        .chars()
+        .map(|character| character as u32 as u8)
+        .collect();
+    let decrypted = rc4_decrypt(&char_codes, &key_bytes);
+
+    // Step 4: Interpret as UTF-8 (fall back to Latin-1).
     match String::from_utf8(decrypted.clone()) {
         Ok(string) => Some(string),
         Err(_) => Some(decrypted.iter().map(|&b| b as char).collect()),

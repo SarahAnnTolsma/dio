@@ -680,6 +680,29 @@ fn extract_rotation_iife<'a>(
         return None;
     };
     let expression = unwrap_parens(&expr_stmt.expression);
+
+    // The IIFE may be a direct call or part of a sequence expression
+    // (comma-joined with other IIFEs in minified code).
+    if let Expression::SequenceExpression(sequence) = expression {
+        for sub_expression in &sequence.expressions {
+            if let Some(target) =
+                try_extract_iife_call(unwrap_parens(sub_expression), array_function_symbol, context)
+            {
+                return Some(target);
+            }
+        }
+        return None;
+    }
+
+    try_extract_iife_call(expression, array_function_symbol, context)
+}
+
+/// Try to match a single expression as a rotation IIFE call.
+fn try_extract_iife_call<'a>(
+    expression: &Expression<'a>,
+    array_function_symbol: SymbolId,
+    context: &TraverseCtx<'a, ()>,
+) -> Option<i64> {
     let Expression::CallExpression(call) = expression else {
         return None;
     };
@@ -708,7 +731,6 @@ fn extract_rotation_iife<'a>(
     let target_value = if let Expression::NumericLiteral(target) = target_expression {
         target.value as i64
     } else {
-        // Try evaluating a compound expression.
         crate::utils::eval::try_eval(target_expression)?.as_number()? as i64
     };
     Some(target_value)
@@ -733,8 +755,10 @@ fn solve_rotation_rc4(
     // Extract wrapper functions from inside the IIFE for checksum evaluation.
     let wrappers = extract_iife_wrappers(iife_statement, decoder_symbol, context);
 
-    for _ in 0..array_len {
+    for rotation in 0..array_len {
         let checksum = eval_rc4_checksum(iife_statement, &rotated, base_offset, &wrappers);
+        if rotation < 3 || rotation == 309 || checksum.is_some() {
+        }
         if let Some(checksum) = checksum {
             if checksum == target {
                 return Some(rotated);
@@ -768,29 +792,43 @@ fn extract_iife_wrappers(
         return wrappers;
     };
     let expression = unwrap_parens(&expr_stmt.expression);
-    let Expression::CallExpression(call) = expression else {
-        return wrappers;
-    };
-    let callee = unwrap_parens(&call.callee);
-    let Expression::FunctionExpression(func) = callee else {
-        return wrappers;
-    };
-    let Some(body) = &func.body else {
-        return wrappers;
+
+    // The IIFE call may be inside a SequenceExpression.
+    let iife_calls: Vec<&Expression<'_>> = if let Expression::SequenceExpression(sequence) = expression {
+        sequence
+            .expressions
+            .iter()
+            .map(|e| unwrap_parens(e))
+            .collect()
+    } else {
+        vec![expression]
     };
 
-    for statement in &body.statements {
-        let Statement::FunctionDeclaration(function) = statement else {
+    for call_expression in iife_calls {
+        let Expression::CallExpression(call) = call_expression else {
             continue;
         };
-        let Some(binding) = &function.id else {
+        let callee = unwrap_parens(&call.callee);
+        let Expression::FunctionExpression(func) = callee else {
             continue;
         };
-        let name = binding.name.to_string();
+        let Some(body) = &func.body else {
+            continue;
+        };
 
-        if let Some((target_sym, mapping)) = classify_wrapper_function(function, context) {
-            if target_sym == decoder_symbol {
-                wrappers.push(IIFEWrapper { name, mapping });
+        for statement in &body.statements {
+            let Statement::FunctionDeclaration(function) = statement else {
+                continue;
+            };
+            let Some(binding) = &function.id else {
+                continue;
+            };
+            let name = binding.name.to_string();
+
+            if let Some((target_sym, mapping)) = classify_wrapper_function(function, context) {
+                if target_sym == decoder_symbol {
+                    wrappers.push(IIFEWrapper { name, mapping });
+                }
             }
         }
     }
@@ -809,16 +847,32 @@ fn eval_rc4_checksum(
         return None;
     };
     let expression = unwrap_parens(&expr_stmt.expression);
-    let Expression::CallExpression(call) = expression else {
-        return None;
-    };
-    let callee = unwrap_parens(&call.callee);
-    let Expression::FunctionExpression(func) = callee else {
-        return None;
-    };
-    let body = func.body.as_ref()?;
 
-    find_checksum_in_body(&body.statements, array, base_offset, wrappers)
+    // The IIFE call may be inside a SequenceExpression.
+    let calls: Vec<&Expression<'_>> = if let Expression::SequenceExpression(sequence) = expression {
+        sequence.expressions.iter().map(|e| unwrap_parens(e)).collect()
+    } else {
+        vec![expression]
+    };
+
+    for call_expression in calls {
+        let Expression::CallExpression(call) = call_expression else {
+            continue;
+        };
+        let callee = unwrap_parens(&call.callee);
+        let Expression::FunctionExpression(func) = callee else {
+            continue;
+        };
+        let Some(body) = &func.body else {
+            continue;
+        };
+
+        if let Some(result) = find_checksum_in_body(&body.statements, array, base_offset, wrappers) {
+            return Some(result);
+        }
+    }
+
+    None
 }
 
 fn find_checksum_in_body(
@@ -832,10 +886,9 @@ fn find_checksum_in_body(
             Statement::VariableDeclaration(declaration) => {
                 for declarator in &declaration.declarations {
                     if let Some(init) = &declarator.init {
-                        if let Some(result) =
-                            eval_rc4_expression(init, array, base_offset, wrappers)
-                        {
-                            return Some(result as i64);
+                        let result = eval_rc4_expression(init, array, base_offset, wrappers);
+                        if result.is_some() {
+                            return Some(result.unwrap() as i64);
                         }
                     }
                 }
