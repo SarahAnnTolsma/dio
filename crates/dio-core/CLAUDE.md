@@ -72,25 +72,20 @@ These functions keep oxc's scoping data in sync. Direct assignment orphans ident
 
 ### 4. Watch out for ParenthesizedExpression
 
-oxc's parser preserves parentheses as `ParenthesizedExpression` nodes by default. When matching operands or conditions, always unwrap parens first:
+oxc's parser preserves parentheses as `ParenthesizedExpression` nodes by default. When matching operands or conditions, always unwrap parens first using `crate::utils::unwrap_parens`:
 
 ```rust
+use crate::utils::unwrap_parens;
+
 // WRONG — will miss `(1 + 2) * 3` because left is ParenthesizedExpression, not NumericLiteral
 if let (Expression::NumericLiteral(l), Expression::NumericLiteral(r)) = (&binary.left, &binary.right) { ... }
 
 // RIGHT — look through parens
-fn unwrap_parens<'a, 'b>(expr: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expr;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
-}
 if let (Expression::NumericLiteral(l), Expression::NumericLiteral(r)) =
     (unwrap_parens(&binary.left), unwrap_parens(&binary.right)) { ... }
 ```
 
-This applies to conditions in if/ternary, operands in binary expressions, arguments in function calls, and any other context where the parser may have wrapped an expression in parens.
+**Do not define a local `unwrap_parens` function** — always import from `crate::utils::unwrap_parens`. This applies to conditions in if/ternary, operands in binary expressions, arguments in function calls, and any other context where the parser may have wrapped an expression in parens.
 
 ### 5. Creating new BlockStatements
 
@@ -146,6 +141,51 @@ When adding a new transformer, update the documentation in `docs/`:
 - Add the transformer to the table in `docs/Transformers.md`.
 - Add input/output examples to the appropriate category document (e.g., `docs/Simplification.md`).
 - If creating a new category, create a new `docs/<Category>.md` and link it from `Transformers.md`.
+
+## Best Practices
+
+### Priority ordering matters
+
+Transformers that detect structural patterns (e.g., control flow flattening, string array rotation) should run at `First` priority. If they run at `Default`, the constant inliner (also `First`) may inline state variables or array indices before the pattern can be matched. When in doubt, think about what the AST looks like *before* any other transformer touches it.
+
+### Never hardcode obfuscator-specific variable names
+
+Transformers must identify patterns by structure (AST shape, parameter count, function body patterns), never by variable name (e.g., `_0x3b41`). Variable names are randomized per-obfuscation and are not stable.
+
+### Scan for-statement inits, not just top-level declarations
+
+`var` declarations in for-loop inits (`for (var x = 1, y = 2; ...)`) are function-scoped and visible outside the loop. Both the constant inlining transformer and the unused variable transformer must scan `ForStatement` init declarations, not just standalone `VariableDeclaration` statements.
+
+### Use shared utilities from `crate::utils`
+
+- `unwrap_parens()` — always import from `crate::utils`, never define locally.
+- `base64_decode()`, `base64_rc4_decode()`, `rc4_decrypt()` — in `crate::utils`.
+- `eval::try_eval()`, `eval::js_parse_int()` — in `crate::utils::eval`.
+
+### Return `true` only when the AST actually changed
+
+The convergence loop uses the return value of `enter_expression`, `enter_statement`, and `enter_statements` to decide whether to re-run transformers. Returning `true` when nothing changed causes infinite loops. Be especially careful when:
+- Setting a field to the same value it already has (e.g., `declarator.init = None` when it was already `None`).
+- The change is internal bookkeeping (e.g., populating a cache) rather than an AST mutation.
+
+### Validate parameters extracted from obfuscated code
+
+Values extracted from the AST (hash parameters, array indices, offsets) come from untrusted input. Always validate:
+- Numeric ranges (e.g., C4 must be a power of 2, > 1).
+- Array bounds before indexing.
+- Overflow before casting `f64` to `i64` (check `value.abs() > i64::MAX as f64`).
+
+### Block-scoped declarations and block unwrapping
+
+When unwrapping bare `BlockStatement`s (promoting their contents to the parent scope), check for `let`/`const` declarations first. These are block-scoped and must not be promoted. `var` is function-scoped and safe to promote.
+
+### Avoid O(n²) patterns in loops
+
+When rotating arrays, use `Vec::rotate_left(1)` instead of `remove(0)` + `push()`. The latter shifts all elements on every iteration, making the loop O(n²).
+
+### Test with the full pipeline, not just the transformer in isolation
+
+Transformers interact with each other through the convergence loop. A test that passes in isolation may fail when other transformers (constant inlining, dead code elimination, etc.) run before or after. Integration tests using `deobfuscate()` exercise the full pipeline.
 
 ## oxc Integration Notes
 
