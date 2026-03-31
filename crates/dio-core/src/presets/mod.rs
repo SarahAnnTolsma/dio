@@ -12,6 +12,7 @@
 //! let result = deobfuscator.deobfuscate("var x = 1 + 2;");
 //! ```
 
+mod datadome;
 mod jsfuck;
 mod obfuscator_io;
 
@@ -31,6 +32,11 @@ pub enum Preset {
     /// string array rotation, proxy functions, and control flow flattening.
     ObfuscatorIo,
 
+    /// Targets DataDome anti-bot scripts.
+    /// Extends Obfuscator.io with DataDome-specific patterns like
+    /// `setTimeout(function() { x = value; }, 0)` unwrapping.
+    DataDome,
+
     /// Targets JSFuck-encoded JavaScript (`[]()!+` only).
     /// Focused subset: constant folding with type coercion, string
     /// concatenation, and built-in evaluation.
@@ -43,6 +49,7 @@ impl Preset {
         match self {
             Preset::Generic => transforms::default_transformers(),
             Preset::ObfuscatorIo => obfuscator_io::transformers(),
+            Preset::DataDome => datadome::transformers(),
             Preset::JsFuck => jsfuck::transformers(),
         }
     }
@@ -54,6 +61,7 @@ impl Preset {
             "obfuscator-io" | "obfuscator_io" | "javascript-obfuscator" => {
                 Some(Preset::ObfuscatorIo)
             }
+            "datadome" | "data-dome" | "data_dome" => Some(Preset::DataDome),
             "jsfuck" => Some(Preset::JsFuck),
             _ => None,
         }
@@ -61,13 +69,18 @@ impl Preset {
 
     /// Returns all known preset names for help text.
     pub fn all_names() -> &'static [&'static str] {
-        &["generic", "obfuscator-io", "jsfuck"]
+        &["generic", "obfuscator-io", "datadome", "jsfuck"]
     }
 }
 
 /// Returns transformers targeting Obfuscator.io / javascript-obfuscator.
 pub fn obfuscator_io_transformers() -> Vec<Box<dyn Transformer>> {
     Preset::ObfuscatorIo.transformers()
+}
+
+/// Returns transformers targeting DataDome anti-bot scripts.
+pub fn datadome_transformers() -> Vec<Box<dyn Transformer>> {
+    Preset::DataDome.transformers()
 }
 
 /// Returns transformers targeting JSFuck-encoded JavaScript.

@@ -159,7 +159,11 @@ var y = getValue();
 
 ## ControlFlowTransformer
 
-Simplifies if/else statements and ternary expressions when the condition is a known constant value. Evaluates boolean, numeric, string, and null literals as conditions. Unwraps single-statement blocks when replacing if statements.
+Simplifies if/else statements and ternary expressions. Handles:
+- Constant conditions (boolean, numeric, string, null literals) — replaces with the taken branch
+- Empty else blocks — removes the else
+- Empty if blocks with else — inverts the condition
+- Both blocks empty — reduces to just the test expression
 
 ### If/else with constant condition
 
@@ -329,6 +333,22 @@ for (; (a(), b(), c); ) { x(); }
 a();
 b();
 for (; c;) { x(); }
+```
+
+### Empty block simplification
+
+```js
+// Before
+if (x) { f(); } else {}
+if (x) {} else { f(); }
+if (f()) {}
+if (f()) {} else {}
+
+// After
+if (x) { f(); }
+if (!x) { f(); }
+f();
+f();
 ```
 
 ## TernaryToIfTransformer

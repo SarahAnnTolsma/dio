@@ -117,15 +117,18 @@ Every new transformer must have integration tests. Tests are organized by transf
 - `constant_folding.rs` — ConstantFoldingTransformer (including JSFuck coercion)
 - `constant_inlining.rs` — ConstantInliningTransformer
 - `string_concatenation.rs` — StringConcatenationTransformer
-- `builtin_evaluation.rs` — BuiltinEvaluationTransformer
+- `builtin_evaluation.rs` — BuiltinEvaluationTransformer (including Math methods)
 - `literal_method_evaluation.rs` — LiteralMethodEvaluationTransformer
-- `control_flow.rs` — ControlFlowTransformer
+- `control_flow.rs` — ControlFlowTransformer (including empty block simplification)
 - `bitwise_simplification.rs` — BitwiseSimplificationTransformer
 - `global_alias_simplification.rs` — GlobalAliasSimplificationTransformer
-- `simplification.rs` — BlockNormalization, Comma, TernaryToIf, LogicalToIf, SequenceStatement, Member, VariableDeclarationSplit
+- `simplification.rs` — BlockNormalization, Comma, TernaryToIf, LogicalToIf, SequenceStatement, Member (including assignment LHS), VariableDeclarationSplit
 - `function_declaration.rs` — FunctionDeclarationTransformer
 - `proxy_function_inlining.rs` — ProxyFunctionInliningTransformer
-- `dead_code.rs` — DeadCodeTransformer
+- `dead_code.rs` — DeadCodeTransformer (including side-effect-free statement removal)
+- `string_array_decoder.rs` — StringArrayDecoderTransformer (Obfuscator.io preset)
+- `control_flow_array.rs` — ControlFlowArrayTransformer (Obfuscator.io preset)
+- `set_timeout_unwrap.rs` — SetTimeoutUnwrapTransformer (DataDome preset)
 - `combined.rs` — Multi-transformer interaction tests
 - `presets.rs` — Preset selection and configuration tests
 

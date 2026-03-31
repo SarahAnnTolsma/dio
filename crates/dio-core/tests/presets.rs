@@ -74,6 +74,8 @@ fn preset_from_name_valid() {
         Preset::from_name("javascript-obfuscator"),
         Some(Preset::ObfuscatorIo)
     );
+    assert_eq!(Preset::from_name("datadome"), Some(Preset::DataDome));
+    assert_eq!(Preset::from_name("data-dome"), Some(Preset::DataDome));
     assert_eq!(Preset::from_name("jsfuck"), Some(Preset::JsFuck));
 }
 

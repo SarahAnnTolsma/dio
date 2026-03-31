@@ -4,13 +4,20 @@ Each transformer is grouped by category and implements the `Transformer` trait f
 
 ## Categories
 
+### General-purpose (included in all presets)
+
 - `constant/` — Constant folding and inlining (scope-aware).
 - `string/` — String literal concatenation.
 - `evaluation/` — Safe evaluation of known built-in functions (String.fromCharCode, parseInt, Number, Boolean, atob, btoa, Math methods).
-- `simplification/` — Block normalization, comma expressions, member access, control flow, ternary-to-if, sequence statement hoisting, global alias simplification.
-- `obfuscator_io/` — Obfuscator.io-specific transforms: string array decoding, string array rotation, control flow array flattening. Only enabled via the ObfuscatorIo preset.
-- `elimination/` — Dead code removal (finalize phase).
+- `simplification/` — Block normalization, comma expressions, member access, control flow, ternary-to-if, sequence statement hoisting, global alias simplification, function declaration conversion.
+- `inlining/` — Proxy function inlining.
+- `elimination/` — Dead code removal and unused variable pruning (finalize phase).
 - `renaming/` — Scope-aware variable renaming (finalize phase).
+
+### Preset-specific
+
+- `obfuscator_io/` — Obfuscator.io-specific transforms: string array decoding (atob, custom base64, RC4), string array rotation, control flow array flattening. Only enabled via the `ObfuscatorIo` or `DataDome` presets.
+- `datadome/` — DataDome-specific transforms: `setTimeout(..., 0)` unwrapping. Only enabled via the `DataDome` preset.
 
 ## Conventions
 

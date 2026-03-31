@@ -2,9 +2,13 @@
 
 ## DeadCodeTransformer
 
-Removes unreachable code after terminal statements (`return`, `throw`, `break`, `continue`) in any statement list. Also removes empty statements. Operates on all statement lists including function bodies, block bodies, and program bodies.
+Removes unreachable and side-effect-free code from statement lists. Runs in the **Finalize** phase so that other transforms (like ControlFlowTransformer) have a chance to simplify conditions first.
 
-Runs in the **Finalize** phase so that other transforms (like ControlFlowTransformer) have a chance to simplify conditions first.
+Handles:
+- Code after terminal statements (`return`, `throw`, `break`, `continue`)
+- Side-effect-free expression statements (numeric, boolean, null, string literals, `undefined`, `void 0`)
+- Empty statements
+- Preserves directive prologues (`"use strict"`, `"use asm"`)
 
 ### After return
 
@@ -37,6 +41,35 @@ function f() {
 }
 ```
 
+### Side-effect-free expression statements
+
+```js
+// Before
+f();
+3;
+true;
+null;
+"hello";
+g();
+
+// After
+f();
+g();
+```
+
+### Preserves directives
+
+```js
+// Before
+"use strict";
+42;
+f();
+
+// After
+"use strict";
+f();
+```
+
 ### Combined with ControlFlowTransformer
 
 When constant conditions are simplified first, dead code elimination cleans up the result:
@@ -52,4 +85,19 @@ function f() {
 function f() {
     return 1;
 }
+```
+
+## UnusedVariableTransformer
+
+Removes variable declarations that are never referenced. Works with `var`, `let`, and `const` declarations.
+
+```js
+// Before
+var used = 1;
+var unused = 2;
+f(used);
+
+// After
+var used = 1;
+f(used);
 ```

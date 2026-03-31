@@ -1,6 +1,7 @@
 //! Built-in transformer implementations grouped by category.
 
 pub mod constant;
+pub mod datadome;
 pub mod elimination;
 pub mod evaluation;
 pub mod inlining;
