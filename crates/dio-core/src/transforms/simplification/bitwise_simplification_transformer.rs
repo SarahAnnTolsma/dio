@@ -24,6 +24,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// Simplifies complex bitwise and mixed boolean-arithmetic expressions by
 /// identifying the canonical operation through truth table evaluation.
@@ -405,15 +406,6 @@ fn expression_node_count(expression: &Expression<'_>) -> usize {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Unwrap parenthesized expressions to get the inner expression.
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
-}
 
 /// Create a numeric literal expression.
 fn make_numeric_literal<'a>(context: &TraverseCtx<'a, ()>, value: f64) -> Expression<'a> {

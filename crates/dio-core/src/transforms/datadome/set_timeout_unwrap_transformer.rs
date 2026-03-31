@@ -115,25 +115,20 @@ impl Transformer for SetTimeoutUnwrapTransformer {
             return false;
         }
 
-        // Replace the setTimeout call with the inner assignment statement.
-        // We need to take the inner expression out of the callback body.
+        // All checks passed — extract the inner statement via mutable access.
+        // The pattern was already validated above, so these matches are safe.
         let Statement::ExpressionStatement(expression_statement) = statement else {
-            return false;
+            unreachable!();
         };
         let Expression::CallExpression(call) = &mut expression_statement.expression else {
-            return false;
+            unreachable!();
         };
-        let Some(callback_expression) = call.arguments[0].as_expression_mut() else {
-            return false;
+        let Expression::FunctionExpression(function) =
+            call.arguments[0].as_expression_mut().unwrap()
+        else {
+            unreachable!();
         };
-        let Expression::FunctionExpression(function) = callback_expression else {
-            return false;
-        };
-        let Some(body) = &mut function.body else {
-            return false;
-        };
-
-        let inner_statement = body.statements.pop().unwrap();
+        let inner_statement = function.body.as_mut().unwrap().statements.pop().unwrap();
         operations::replace_statement(statement, inner_statement, context);
         true
     }

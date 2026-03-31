@@ -38,7 +38,9 @@ impl Transformer for ControlFlowFlatteningTransformer {
     }
 
     fn priority(&self) -> TransformerPriority {
-        TransformerPriority::Default
+        // Must run before constant inlining (First priority) replaces
+        // the state variable with its initial value.
+        TransformerPriority::First
     }
 
     fn phase(&self) -> TransformerPhase {

@@ -37,6 +37,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 use crate::utils;
 
 /// A pre-decoded value from the string array.
@@ -374,9 +375,7 @@ impl<'a> FunctionBodyAnalyzer<'a> {
 impl<'a> Visit<'a> for FunctionBodyAnalyzer<'a> {
     fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
         let ref_id = identifier.reference_id.get();
-        if identifier.name.as_str() == "atob" && ref_id.map_or(true, |_| true) {
-            // atob is a global — it won't have a resolved symbol.
-            // Only set if the name matches (unresolved globals have no symbol_id).
+        if identifier.name.as_str() == "atob" {
             self.has_atob_reference = true;
         }
         self.identifier_references
@@ -626,11 +625,3 @@ fn extract_numeric_index(expression: &Expression<'_>) -> Option<usize> {
     }
 }
 
-/// Unwrap parenthesized expressions.
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
-}

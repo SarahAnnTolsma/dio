@@ -20,6 +20,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// Folds constant binary and unary expressions into their computed values.
 pub struct ConstantFoldingTransformer;
@@ -73,15 +74,6 @@ fn make_numeric_literal<'a>(context: &TraverseCtx<'a, ()>, value: f64) -> Expres
 fn make_string_literal<'a>(context: &TraverseCtx<'a, ()>, value: &str) -> Expression<'a> {
     let atom = context.ast.atom(value);
     context.ast.expression_string_literal(SPAN, atom, None)
-}
-
-/// Unwrap parenthesized expressions to get the inner expression.
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
 }
 
 /// Try to fold a binary expression with two literal operands.

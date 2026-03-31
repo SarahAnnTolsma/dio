@@ -48,6 +48,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// How a wrapper function maps its parameters to the decoder call.
 #[derive(Debug, Clone)]
@@ -766,8 +767,7 @@ fn solve_rotation_rc4(
         }
 
         // Rotate left by 1.
-        let first = rotated.remove(0);
-        rotated.push(first);
+        rotated.rotate_left(1);
     }
 
     None
@@ -1001,10 +1001,3 @@ fn eval_rc4_expression(
     crate::utils::eval::try_eval(expression)?.as_number()
 }
 
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
-}

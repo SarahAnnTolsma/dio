@@ -165,7 +165,11 @@ fn try_evaluate_parse_int<'a>(
         if !value.is_finite() {
             return false;
         }
-        let result = value.trunc() as i64;
+        let truncated = value.trunc();
+        if truncated.abs() > (i64::MAX as f64) {
+            return false;
+        }
+        let result = truncated as i64;
         let result_f64 = result as f64;
         let raw = context.ast.atom(&result.to_string());
         let replacement =

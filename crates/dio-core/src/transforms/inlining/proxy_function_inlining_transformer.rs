@@ -45,6 +45,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// The kind of proxy function detected.
 #[derive(Debug, Clone)]
@@ -280,15 +281,6 @@ fn is_parameter_reference<'a>(
         return false;
     };
     param_binding.symbol_id.get() == Some(symbol_id)
-}
-
-/// Unwrap parenthesized expressions.
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
 }
 
 impl Transformer for ProxyFunctionInliningTransformer {

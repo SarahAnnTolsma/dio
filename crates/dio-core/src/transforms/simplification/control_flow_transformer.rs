@@ -10,6 +10,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// Simplifies control flow when conditions are constant boolean values.
 pub struct ControlFlowTransformer;
@@ -182,11 +183,3 @@ fn evaluate_as_boolean(expression: &Expression<'_>) -> Option<bool> {
     }
 }
 
-/// Unwrap parenthesized expressions to get the inner expression.
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
-}

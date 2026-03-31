@@ -43,6 +43,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// Information about a detected rotation-based string array.
 #[derive(Debug, Clone)]
@@ -163,8 +164,7 @@ impl StringArrayRotationTransformer {
                             }
 
                             // Rotate left by 1: push(shift())
-                            let first = array.remove(0);
-                            array.push(first);
+                            array.rotate_left(1);
                         }
 
                         if !found {
@@ -598,15 +598,6 @@ fn eval_checksum_expression(
         // For everything else (literals, pure calls), delegate to the shared evaluator.
         _ => crate::utils::eval::try_eval(expression)?.as_number(),
     }
-}
-
-/// Unwrap parenthesized expressions.
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
 }
 
 impl Transformer for StringArrayRotationTransformer {

@@ -556,6 +556,11 @@ fn find_hash_call_in_expression(
             let c4 = extract_argument_number(&call.arguments[4])?;
             let c5 = extract_argument_number(&call.arguments[5])?;
 
+            // C4 must be a power of 2 greater than 1 (used as bitmask: & (C4 - 1)).
+            if c4 < 2 || (c4 & (c4 - 1)) != 0 {
+                return None;
+            }
+
             Some(HashParameters {
                 c1,
                 c2,

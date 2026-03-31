@@ -48,10 +48,12 @@ impl Transformer for DeadCodeTransformer {
         let original_length = statements.len();
 
         // Find the first terminal statement and remove everything after it.
+        // Use remove_statement_at to clean up identifier references, then truncate.
         if let Some(terminal_index) = find_first_terminal(statements) {
             for index in (terminal_index + 1..statements.len()).rev() {
                 operations::remove_statement_at(statements, index, context);
             }
+            // remove_statement_at replaces with empty statements; truncate drops them.
             statements.truncate(terminal_index + 1);
         }
 

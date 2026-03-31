@@ -2,6 +2,20 @@
 
 pub mod eval;
 
+use oxc_ast::ast::Expression;
+
+/// Unwrap parenthesized expressions to get the inner expression.
+///
+/// oxc preserves parentheses as `ParenthesizedExpression` nodes. When matching
+/// operands or conditions, always unwrap parens first.
+pub fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
+    let mut current = expression;
+    while let Expression::ParenthesizedExpression(paren) = current {
+        current = &paren.expression;
+    }
+    current
+}
+
 const STANDARD_BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 

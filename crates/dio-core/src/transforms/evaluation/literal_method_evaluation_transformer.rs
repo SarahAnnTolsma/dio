@@ -30,6 +30,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens;
 
 /// Evaluates method calls and property accesses on string and array literals.
 pub struct LiteralMethodEvaluationTransformer;
@@ -94,15 +95,6 @@ fn format_number(value: f64) -> String {
     } else {
         value.to_string()
     }
-}
-
-/// Unwrap parenthesized expressions to get the inner expression.
-fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
 }
 
 /// Check whether an array expression element is a literal. Returns `true` for
