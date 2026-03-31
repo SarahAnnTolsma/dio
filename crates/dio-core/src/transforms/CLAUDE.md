@@ -8,6 +8,7 @@ Each transformer is grouped by category and implements the `Transformer` trait f
 - `string/` — String literal concatenation.
 - `evaluation/` — Safe evaluation of known built-in functions (String.fromCharCode, parseInt, Number, Boolean, atob, btoa, Math methods).
 - `simplification/` — Block normalization, comma expressions, member access, control flow, ternary-to-if, sequence statement hoisting, global alias simplification.
+- `obfuscator_io/` — Obfuscator.io-specific transforms: string array decoding, string array rotation, control flow array flattening. Only enabled via the ObfuscatorIo preset.
 - `elimination/` — Dead code removal (finalize phase).
 - `renaming/` — Scope-aware variable renaming (finalize phase).
 

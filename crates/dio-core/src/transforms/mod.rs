@@ -4,6 +4,7 @@ pub mod constant;
 pub mod elimination;
 pub mod evaluation;
 pub mod inlining;
+pub mod obfuscator_io;
 pub mod renaming;
 pub mod simplification;
 pub mod string;
