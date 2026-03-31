@@ -68,6 +68,47 @@ pub struct ConstantInliningTransformer {
 }
 
 impl ConstantInliningTransformer {
+    /// Scan a variable declaration for inlinable constants.
+    fn scan_declaration(
+        declaration: &oxc_ast::ast::VariableDeclaration<'_>,
+        constants: &mut HashMap<SymbolId, ConstantValue>,
+        context: &TraverseCtx<'_, ()>,
+    ) {
+        for declarator in &declaration.declarations {
+            let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id else {
+                continue;
+            };
+
+            let Some(symbol_id) = binding.symbol_id.get() else {
+                continue;
+            };
+
+            let Some(init) = &declarator.init else {
+                continue;
+            };
+
+            let Some(value) = Self::extract_constant_value(init) else {
+                continue;
+            };
+
+            if Self::has_write_references(symbol_id, context) {
+                continue;
+            }
+
+            let redeclarations = context.scoping().symbol_redeclarations(symbol_id);
+            if !redeclarations.is_empty() {
+                continue;
+            }
+
+            let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
+            if reference_ids.is_empty() {
+                continue;
+            }
+
+            constants.insert(symbol_id, value);
+        }
+    }
+
     /// Check whether a symbol has any write references (assignments, updates, etc.).
     fn has_write_references(symbol_id: SymbolId, context: &TraverseCtx<'_, ()>) -> bool {
         let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
@@ -177,51 +218,33 @@ impl Transformer for ConstantInliningTransformer {
         let mut constants = self.constants.lock().unwrap();
         let mut symbols_to_remove = self.symbols_to_remove.lock().unwrap();
 
-        // Phase 1: Scan for inlinable constants.
+        // Phase 1: Scan for inlinable constants in variable declarations,
+        // including those in for-statement inits (var in for-inits are scoped
+        // to the enclosing function/block, not the loop).
         for statement in statements.iter() {
-            let Statement::VariableDeclaration(declaration) = statement else {
-                continue;
-            };
-
-            for declarator in &declaration.declarations {
-                // Only handle simple bindings (not destructuring).
-                let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
-                else {
-                    continue;
-                };
-
-                let Some(symbol_id) = binding.symbol_id.get() else {
-                    continue;
-                };
-
-                // Must have an initializer that is a literal.
-                let Some(init) = &declarator.init else {
-                    continue;
-                };
-
-                let Some(value) = Self::extract_constant_value(init) else {
-                    continue;
-                };
-
-                // Must not be reassigned (no write references).
-                if Self::has_write_references(symbol_id, context) {
-                    continue;
+            match statement {
+                Statement::VariableDeclaration(declaration) => {
+                    Self::scan_declaration(declaration, &mut constants, context);
                 }
-
-                // Must not be redeclared.
-                let redeclarations = context.scoping().symbol_redeclarations(symbol_id);
-                if !redeclarations.is_empty() {
-                    continue;
+                Statement::ForStatement(for_statement) => {
+                    if let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(
+                        declaration,
+                    )) = &for_statement.init
+                    {
+                        Self::scan_declaration(declaration, &mut constants, context);
+                    }
                 }
-
-                // Must have at least one read reference to inline into.
-                // Variables with zero references are dead code, not our concern.
-                let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
-                if reference_ids.is_empty() {
-                    continue;
+                Statement::ForInStatement(for_in) => {
+                    if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(declaration) = &for_in.left {
+                        Self::scan_declaration(declaration, &mut constants, context);
+                    }
                 }
-
-                constants.insert(symbol_id, value);
+                Statement::ForOfStatement(for_of) => {
+                    if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(declaration) = &for_of.left {
+                        Self::scan_declaration(declaration, &mut constants, context);
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -230,34 +253,70 @@ impl Transformer for ConstantInliningTransformer {
         }
 
         // Phase 2: Remove declarations for constants that will be inlined.
-        // We remove the declaration statements (or individual declarators) here.
         let mut changed = false;
         for index in (0..statements.len()).rev() {
-            let Statement::VariableDeclaration(declaration) = &statements[index] else {
-                continue;
-            };
+            match &statements[index] {
+                Statement::VariableDeclaration(declaration) => {
+                    let all_inlinable = declaration.declarations.iter().all(|declarator| {
+                        if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
+                            &declarator.id
+                            && let Some(symbol_id) = binding.symbol_id.get()
+                        {
+                            return constants.contains_key(&symbol_id);
+                        }
+                        false
+                    });
 
-            // Check if all declarators in this declaration are being inlined.
-            let all_inlinable = declaration.declarations.iter().all(|declarator| {
-                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
-                    && let Some(symbol_id) = binding.symbol_id.get() {
-                        return constants.contains_key(&symbol_id);
-                    }
-                false
-            });
-
-            if all_inlinable {
-                // Mark all symbols for removal tracking.
-                for declarator in &declaration.declarations {
-                    if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
-                        &declarator.id
-                        && let Some(symbol_id) = binding.symbol_id.get()
-                            && constants.contains_key(&symbol_id) {
+                    if all_inlinable {
+                        for declarator in &declaration.declarations {
+                            if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
+                                &declarator.id
+                                && let Some(symbol_id) = binding.symbol_id.get()
+                                    && constants.contains_key(&symbol_id)
+                            {
                                 symbols_to_remove.push(symbol_id);
                             }
+                        }
+                        operations::remove_statement_at(statements, index, context);
+                        changed = true;
+                    }
                 }
-                operations::remove_statement_at(statements, index, context);
-                changed = true;
+                Statement::ForStatement(_) | Statement::ForInStatement(_) | Statement::ForOfStatement(_) => {
+                    // For for-init declarations, null out the initializers of
+                    // inlined constants. The unused variable transformer will
+                    // clean up the empty declarators later.
+                    let declaration = match &mut statements[index] {
+                        Statement::ForStatement(f) => {
+                            if let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(d)) =
+                                &mut f.init
+                            {
+                                Some(&mut **d)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+
+                    if let Some(declaration) = declaration {
+                        for declarator in declaration.declarations.iter_mut() {
+                            if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
+                                &declarator.id
+                            {
+                                if let Some(symbol_id) = binding.symbol_id.get() {
+                                    if constants.contains_key(&symbol_id)
+                                        && declarator.init.is_some()
+                                    {
+                                        declarator.init = None;
+                                        symbols_to_remove.push(symbol_id);
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
