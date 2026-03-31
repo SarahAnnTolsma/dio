@@ -161,10 +161,31 @@ impl Transformer for ControlFlowFlatteningTransformer {
                 let case = &mut switch.cases[*case_index];
                 for &stmt_index in stmt_indices {
                     if stmt_index < case.consequent.len() {
-                        let stmt = std::mem::replace(
+                        let mut stmt = std::mem::replace(
                             &mut case.consequent[stmt_index],
                             context.ast.statement_empty(SPAN),
                         );
+
+                        // If the statement is a block that ends with a state
+                        // assignment, strip the assignment and unwrap the block.
+                        if let Statement::BlockStatement(block) = &mut stmt {
+                            if let Some(last) = block.body.last() {
+                                if extract_state_assignment(last, &state_name).is_some() {
+                                    block.body.pop();
+                                }
+                            }
+                            // Unwrap single-statement blocks.
+                            if block.body.len() == 1 {
+                                let inner = block.body.pop().unwrap();
+                                replacement_statements.push(inner);
+                                continue;
+                            }
+                            // Skip empty blocks entirely.
+                            if block.body.is_empty() {
+                                continue;
+                            }
+                        }
+
                         replacement_statements.push(stmt);
                     }
                 }
@@ -312,6 +333,25 @@ fn parse_state_map(
             if let Some(assigned_state) = extract_state_assignment(stmt, state_name) {
                 next_state = Some(assigned_state);
                 continue;
+            }
+
+            // Check inside block statements for state assignments.
+            // Pattern: `{ code; state = N; }` — extract the state assignment
+            // and keep the block (its contents will be unwrapped later).
+            if let Statement::BlockStatement(block) = stmt {
+                if let Some(last) = block.body.last() {
+                    if let Some(assigned_state) =
+                        extract_state_assignment(last, state_name)
+                    {
+                        next_state = Some(assigned_state);
+                        // Only keep the block if it has other statements besides
+                        // the state assignment.
+                        if block.body.len() > 1 {
+                            statement_indices.push(stmt_index);
+                        }
+                        continue;
+                    }
+                }
             }
 
             if matches!(stmt, Statement::BreakStatement(_)) {
