@@ -16,7 +16,7 @@ Transformers that evaluate or propagate constant values.
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
 | ConstantFoldingTransformer | Active | Main | Folds constant arithmetic, comparisons, typeof, void, and type coercion (JSFuck patterns) |
-| ConstantInliningTransformer | Active | Main | Inlines single-assignment constants (var/let/const with no write references) into their references |
+| ConstantInliningTransformer | Active | Main | Inlines single-assignment constants (var/let/const with no write references, including for-statement inits) into their references |
 
 ### [Evaluation](Evaluation.md)
 
@@ -46,6 +46,7 @@ Transformers that normalize and simplify control flow and expressions.
 | BlockNormalizationTransformer | Active | Main | Wraps bare control flow bodies in block statements |
 | CommaTransformer | Active | Main | Removes side-effect-free leading expressions from sequences |
 | ControlFlowTransformer | Active | Main | Simplifies if/else and ternaries with constant conditions; removes empty if/else branches |
+| DeclarationMergeTransformer | Active | Main | Merges `var x; x = literal;` into `var x = literal;` |
 | FunctionDeclarationTransformer | Active | Main | Converts `var x = function() {}` to `function x() {}` |
 | MemberTransformer | Active | Main | Converts computed member access to dot notation (expression and assignment LHS) |
 | LogicalToIfTransformer | Active | Main | Converts standalone logical &&/\|\| expressions to if statements |
@@ -68,7 +69,7 @@ Transformers that remove dead or unreachable code.
 | Transformer | Status | Phase | Description |
 |---|---|---|---|
 | DeadCodeTransformer | Active | Finalize | Removes unreachable code after return/throw/break/continue and side-effect-free expression statements |
-| UnusedVariableTransformer | Active | Finalize | Removes unused variable declarations |
+| UnusedVariableTransformer | Active | Finalize | Removes unused variable declarations (including from for-statement inits) |
 
 ### [Renaming](Renaming.md)
 
@@ -90,6 +91,7 @@ These transformers are only enabled when using a specific preset.
 | StringArrayRotationTransformer | Solves array rotation and inlines plain-text string lookups |
 | StringArrayRC4DecoderTransformer | Decodes RC4-encrypted string arrays (high obfuscation mode) |
 | ControlFlowArrayTransformer | Resolves 2D control flow dispatch arrays built with hash functions |
+| ControlFlowFlatteningTransformer | Linearizes for/switch state machine patterns back to sequential code |
 
 ### DataDome (`--preset datadome`)
 

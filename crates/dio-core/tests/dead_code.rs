@@ -109,3 +109,31 @@ fn remove_multiple_side_effect_free() {
         "f();"
     );
 }
+
+// -- Bare block unwrapping --
+
+#[test]
+fn unwrap_bare_block() {
+    assert_eq!(
+        deobfuscate("f(); { g(); h(); } i();"),
+        "f();\ng();\nh();\ni();"
+    );
+}
+
+#[test]
+fn keep_block_with_let() {
+    // Blocks with let/const declarations must not be unwrapped.
+    assert_eq!(
+        deobfuscate("f(); { let x = g(); h(x); } i();"),
+        "f();\n{\n    let x = g();\n    h(x);\n}\ni();"
+    );
+}
+
+#[test]
+fn unwrap_block_with_var() {
+    // var is function-scoped, so it's safe to unwrap.
+    assert_eq!(
+        deobfuscate("f(); { var x = g(); h(x); } i();"),
+        "f();\nvar x = g();\nh(x);\ni();"
+    );
+}

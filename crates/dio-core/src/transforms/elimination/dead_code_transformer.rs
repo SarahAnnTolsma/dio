@@ -14,6 +14,7 @@
 
 use oxc_allocator::Vec as ArenaVec;
 use oxc_ast::ast::{Expression, Statement};
+use oxc_span::SPAN;
 use oxc_traverse::TraverseCtx;
 
 use crate::operations;
@@ -61,6 +62,36 @@ impl Transformer for DeadCodeTransformer {
             }
         }
 
+        // Unwrap bare block statements: `{ a; b; }` → `a; b;` when the
+        // block appears as a direct child of a statement list and contains
+        // no block-scoped declarations (let/const). These are left over
+        // from control flow flattening. `var` is function-scoped and already
+        // leaks, so it's safe to promote.
+        let mut block_index = 0;
+        while block_index < statements.len() {
+            if let Statement::BlockStatement(block) = &statements[block_index] {
+                if block.body.is_empty() || has_block_scoped_declarations(&block.body) {
+                    block_index += 1;
+                    continue;
+                }
+                let inner_count = block.body.len();
+                let Statement::BlockStatement(mut block) = std::mem::replace(
+                    &mut statements[block_index],
+                    context.ast.statement_empty(SPAN),
+                ) else {
+                    unreachable!();
+                };
+                let inner: Vec<Statement<'a>> = block.body.drain(..).collect();
+                statements.remove(block_index);
+                for (offset, stmt) in inner.into_iter().enumerate() {
+                    statements.insert(block_index + offset, stmt);
+                }
+                block_index += inner_count;
+            } else {
+                block_index += 1;
+            }
+        }
+
         // Remove empty statements (clean up references first via operations).
         operations::retain_statements(
             statements,
@@ -89,6 +120,21 @@ fn is_terminal_statement(statement: &Statement<'_>) -> bool {
             | Statement::BreakStatement(_)
             | Statement::ContinueStatement(_)
     )
+}
+
+/// Check if a statement list contains any block-scoped declarations (let/const).
+fn has_block_scoped_declarations(statements: &[Statement<'_>]) -> bool {
+    statements.iter().any(|statement| {
+        if let Statement::VariableDeclaration(declaration) = statement {
+            matches!(
+                declaration.kind,
+                oxc_ast::ast::VariableDeclarationKind::Let
+                    | oxc_ast::ast::VariableDeclarationKind::Const
+            )
+        } else {
+            false
+        }
+    })
 }
 
 /// Check if a statement is an expression statement with no side effects.
