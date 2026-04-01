@@ -22,10 +22,10 @@ use std::sync::Mutex;
 use oxc_allocator::Vec as ArenaVec;
 use oxc_ast::ast::{Expression, Statement};
 use oxc_span::SPAN;
+use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 use oxc_traverse::TraverseCtx;
 
-use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 use crate::utils::unwrap_parens;
 
@@ -38,6 +38,10 @@ struct DispatchFunction {
     exit_value: i64,
     /// Map from case value to case body info.
     cases: HashMap<i64, CaseInfo>,
+    /// Entry values discovered from call sites (populated across passes).
+    discovered_entry_values: Vec<i64>,
+    /// Entry values already linearized (functions generated).
+    linearized_entry_values: Vec<i64>,
 }
 
 /// Information about a single switch case.
@@ -100,7 +104,7 @@ impl Transformer for SwitchDispatchTransformer {
     ) -> bool {
         let mut dispatchers = self.dispatchers.lock().unwrap();
 
-        // Phase 1: Detect dispatch functions.
+        // Phase 1: Detect dispatch functions (only on first pass).
         if dispatchers.is_empty() {
             for statement in statements.iter() {
                 // Check variable declarations: var M6 = function lK(df, Mh) { ... }
@@ -141,261 +145,175 @@ impl Transformer for SwitchDispatchTransformer {
             return false;
         }
 
-        // Phase 2: Resolve arithmetic state transitions to direct assignments.
-        // Convert `df += 625` (in case 72) to `df = 697` for readability.
+        // Scan this scope for dispatch calls and record entry values.
+        for statement in statements.iter() {
+            scan_for_dispatch_calls(statement, &mut dispatchers, context);
+        }
+
         let mut changed = false;
 
-        for statement in statements.iter_mut() {
-            // Find dispatch functions (var M6 = function lK(...) or function lK(...))
-            let function = match statement {
-                Statement::VariableDeclaration(declaration) => {
-                    declaration.declarations.iter_mut().find_map(|d| {
-                        if let Some(Expression::FunctionExpression(f)) = &mut d.init
-                            && let Some(binding) = &f.id
-                            && let Some(sym) = binding.symbol_id.get()
-                            && dispatchers.contains_key(&sym)
-                        {
-                            return Some(&mut **f);
-                        }
-                        None
-                    })
+        // Phase 2: Resolve arithmetic state transitions (only in the scope
+        // that contains the dispatch function).
+        let func_stmt_index = find_dispatch_switch_index(statements, &dispatchers);
+
+        if let Some(func_index) = func_stmt_index {
+            // Phase 2: Resolve arithmetic transitions in the switch.
+            let state_param = dispatchers
+                .values()
+                .next()
+                .map(|d| d.state_param_name.clone());
+
+            if let Some(ref state_param) = state_param
+                && let Some(switch) = navigate_to_switch(&mut statements[func_index])
+            {
+                for case in switch.cases.iter_mut() {
+                    let case_value = case.test.as_ref().and_then(extract_numeric_value);
+                    let Some(case_value) = case_value else {
+                        continue;
+                    };
+                    for stmt in case.consequent.iter_mut() {
+                        changed |=
+                            resolve_arithmetic_transition(stmt, state_param, case_value, context);
+                    }
                 }
-                Statement::FunctionDeclaration(f) => {
-                    if let Some(binding) = &f.id {
-                        if let Some(sym) = binding.symbol_id.get() {
-                            if dispatchers.contains_key(&sym) {
-                                Some(&mut **f)
-                            } else {
-                                None
-                            }
+            }
+
+            // Re-analyze with resolved transitions.
+            let updated_dispatch = match &statements[func_index] {
+                Statement::VariableDeclaration(declaration) => {
+                    declaration.declarations.iter().find_map(|d| {
+                        if let Some(Expression::FunctionExpression(f)) = &d.init {
+                            analyze_dispatch_function(f)
                         } else {
                             None
                         }
-                    } else {
-                        None
-                    }
+                    })
                 }
+                Statement::FunctionDeclaration(f) => analyze_dispatch_function(f),
                 _ => None,
             };
 
-            let Some(function) = function else {
-                continue;
-            };
-            let Some(body) = &mut function.body else {
-                continue;
-            };
+            // Phase 3a: Generate linearized functions for discovered entry values.
+            if let Some(dispatch) = &updated_dispatch {
+                let entry_values: Vec<i64> = dispatchers
+                    .values()
+                    .flat_map(|d| d.discovered_entry_values.iter().copied())
+                    .collect();
+                let already_linearized: Vec<i64> = dispatchers
+                    .values()
+                    .flat_map(|d| d.linearized_entry_values.iter().copied())
+                    .collect();
+                let func_name = get_dispatch_func_name(&statements[func_index]);
 
-            // Find the while loop and its switch.
-            let Some(while_stmt) = body.statements.iter_mut().find_map(|s| {
-                if let Statement::WhileStatement(w) = s {
-                    Some(w)
-                } else {
-                    None
-                }
-            }) else {
-                continue;
-            };
-            let Statement::BlockStatement(while_body) = &mut while_stmt.body else {
-                continue;
-            };
-            let Some(switch) = while_body.body.iter_mut().find_map(|s| {
-                if let Statement::SwitchStatement(sw) = s {
-                    Some(sw)
-                } else {
-                    None
-                }
-            }) else {
-                continue;
-            };
-
-            let state_param = &dispatchers
-                .values()
-                .next()
-                .unwrap()
-                .state_param_name
-                .clone();
-
-            // Resolve arithmetic transitions in each case.
-            for case in switch.cases.iter_mut() {
-                let Some(test) = &case.test else {
-                    continue;
-                };
-                let Some(case_value) = extract_numeric_value(test) else {
-                    continue;
-                };
-
-                for stmt in case.consequent.iter_mut() {
-                    let Statement::ExpressionStatement(expr_stmt) = stmt else {
-                        continue;
-                    };
-                    let Expression::AssignmentExpression(assignment) = &mut expr_stmt.expression
-                    else {
-                        continue;
-                    };
-                    let oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(target) =
-                        &assignment.left
-                    else {
-                        continue;
-                    };
-                    if target.name.as_str() != state_param {
+                #[allow(clippy::type_complexity)]
+                let mut new_functions: Vec<(i64, Vec<Statement<'a>>)> = Vec::new();
+                for entry_value in &entry_values {
+                    if already_linearized.contains(entry_value) {
                         continue;
                     }
+                    let Some(traced) = trace_dispatch(*entry_value, dispatch) else {
+                        continue;
+                    };
 
-                    // Resolve += and -= to direct assignment.
-                    match assignment.operator {
-                        oxc_syntax::operator::AssignmentOperator::Addition => {
-                            if let Some(delta) = extract_numeric_value(&assignment.right) {
-                                let resolved = case_value + delta;
-                                assignment.operator =
-                                    oxc_syntax::operator::AssignmentOperator::Assign;
-                                let raw = context.ast.atom(&resolved.to_string());
-                                assignment.right = context.ast.expression_numeric_literal(
-                                    SPAN,
-                                    resolved as f64,
-                                    Some(raw),
-                                    oxc_syntax::number::NumberBase::Decimal,
-                                );
-                                changed = true;
+                    if let Some(switch) = navigate_to_switch(&mut statements[func_index]) {
+                        let mut body_stmts: Vec<Statement<'a>> = Vec::new();
+                        for &state in &traced {
+                            if let Some(case_info) = dispatch.cases.get(&state) {
+                                let case = &mut switch.cases[case_info.case_index];
+                                for &stmt_idx in &case_info.statement_indices {
+                                    if stmt_idx < case.consequent.len() {
+                                        let stmt = std::mem::replace(
+                                            &mut case.consequent[stmt_idx],
+                                            context.ast.statement_empty(SPAN),
+                                        );
+                                        body_stmts.push(stmt);
+                                    }
+                                }
                             }
                         }
-                        oxc_syntax::operator::AssignmentOperator::Subtraction => {
-                            if let Some(delta) = extract_numeric_value(&assignment.right) {
-                                let resolved = case_value - delta;
-                                assignment.operator =
-                                    oxc_syntax::operator::AssignmentOperator::Assign;
-                                let raw = context.ast.atom(&resolved.to_string());
-                                assignment.right = context.ast.expression_numeric_literal(
-                                    SPAN,
-                                    resolved as f64,
-                                    Some(raw),
-                                    oxc_syntax::number::NumberBase::Decimal,
-                                );
-                                changed = true;
-                            }
+                        if !body_stmts.is_empty() {
+                            new_functions.push((*entry_value, body_stmts));
                         }
-                        _ => {}
+                    }
+                }
+
+                // Insert new functions after the dispatch function.
+                let mut insert_offset = 1;
+                for (entry_value, body_stmts) in new_functions {
+                    let new_name = format!(
+                        "{}_{}",
+                        func_name.as_deref().unwrap_or("dispatch"),
+                        entry_value
+                    );
+                    let name_atom = context.ast.atom(&new_name);
+                    let binding = context.ast.binding_identifier(SPAN, name_atom);
+
+                    let param_atom = context.ast.atom("Mh");
+                    let param_pattern = context
+                        .ast
+                        .binding_pattern_binding_identifier(SPAN, param_atom);
+                    let param = context.ast.formal_parameter(
+                        SPAN,
+                        context.ast.vec(),
+                        param_pattern,
+                        oxc_ast::NONE,
+                        oxc_ast::NONE,
+                        false,
+                        None,
+                        false,
+                        false,
+                    );
+                    let params = context.ast.formal_parameters(
+                        SPAN,
+                        oxc_ast::ast::FormalParameterKind::FormalParameter,
+                        context.ast.vec_from_iter([param]),
+                        oxc_ast::NONE,
+                    );
+
+                    let body_vec = context.ast.vec_from_iter(body_stmts);
+                    let function_body =
+                        context
+                            .ast
+                            .alloc_function_body(SPAN, context.ast.vec(), body_vec);
+                    let func_node = context.ast.alloc_function(
+                        SPAN,
+                        oxc_ast::ast::FunctionType::FunctionDeclaration,
+                        Some(binding),
+                        false,
+                        false,
+                        false,
+                        oxc_ast::NONE,
+                        oxc_ast::NONE,
+                        params,
+                        oxc_ast::NONE,
+                        Some(function_body),
+                    );
+
+                    // Register a scope for the new function so oxc's
+                    // traversal doesn't panic on the missing scope_id.
+                    let scope_id = context.create_child_scope_of_current(
+                        ScopeFlags::Function | ScopeFlags::StrictMode,
+                    );
+                    func_node.scope_id.set(Some(scope_id));
+
+                    let function = Statement::FunctionDeclaration(func_node);
+                    statements.insert(func_index + insert_offset, function);
+                    insert_offset += 1;
+                    changed = true;
+
+                    for dispatch in dispatchers.values_mut() {
+                        if !dispatch.linearized_entry_values.contains(&entry_value) {
+                            dispatch.linearized_entry_values.push(entry_value);
+                        }
                     }
                 }
             }
         }
 
-        // Phase 3: Re-analyze the dispatch function with resolved transitions,
-        // then find and replace call sites with linearized bodies.
-        // We need to re-analyze because Phase 2 modified the transitions.
-        let mut updated_dispatchers: HashMap<SymbolId, DispatchFunction> = HashMap::new();
-        for statement in statements.iter() {
-            if let Statement::VariableDeclaration(declaration) = statement {
-                for declarator in &declaration.declarations {
-                    if let Some(Expression::FunctionExpression(function)) = &declarator.init
-                        && let Some(dispatch) = analyze_dispatch_function(function)
-                    {
-                        if let Some(binding) = &function.id
-                            && let Some(symbol_id) = binding.symbol_id.get()
-                            && dispatchers.contains_key(&symbol_id)
-                        {
-                            updated_dispatchers.insert(symbol_id, dispatch.clone());
-                        }
-                        if let oxc_ast::ast::BindingPattern::BindingIdentifier(var_binding) =
-                            &declarator.id
-                            && let Some(var_symbol) = var_binding.symbol_id.get()
-                            && dispatchers.contains_key(&var_symbol)
-                        {
-                            updated_dispatchers.insert(var_symbol, dispatch);
-                        }
-                    }
-                }
-            }
-            if let Statement::FunctionDeclaration(function) = statement
-                && let Some(dispatch) = analyze_dispatch_function(function)
-                && let Some(binding) = &function.id
-                && let Some(symbol_id) = binding.symbol_id.get()
-                && dispatchers.contains_key(&symbol_id)
-            {
-                updated_dispatchers.insert(symbol_id, dispatch);
-            }
-        }
-
-        // Find call sites: expression statements that call a dispatch function
-        // with a known numeric entry value.
-        let mut call_replacements: Vec<(usize, SymbolId, i64)> = Vec::new();
-        for (index, statement) in statements.iter().enumerate() {
-            let Statement::ExpressionStatement(expr_stmt) = statement else {
-                continue;
-            };
-            if let Some((symbol_id, entry_value)) =
-                extract_dispatch_call(&expr_stmt.expression, &updated_dispatchers, context)
-            {
-                call_replacements.push((index, symbol_id, entry_value));
-            }
-        }
-
-        // Build a plan: for each call site, compute which (case_index, stmt_indices)
-        // to extract, in order. This is done immutably.
-        #[allow(clippy::type_complexity)]
-        let mut linearization_plan: Vec<(usize, Vec<(usize, Vec<usize>)>)> = Vec::new();
-
-        for &(call_index, symbol_id, entry_value) in call_replacements.iter().rev() {
-            let Some(dispatch) = updated_dispatchers.get(&symbol_id) else {
-                continue;
-            };
-            let Some(traced_states) = trace_dispatch(entry_value, dispatch) else {
-                continue;
-            };
-
-            let mut case_extractions: Vec<(usize, Vec<usize>)> = Vec::new();
-            for &state in &traced_states {
-                if let Some(case_info) = dispatch.cases.get(&state)
-                    && !case_info.statement_indices.is_empty()
-                {
-                    case_extractions
-                        .push((case_info.case_index, case_info.statement_indices.clone()));
-                }
-            }
-
-            if !case_extractions.is_empty() {
-                linearization_plan.push((call_index, case_extractions));
-            }
-        }
-
-        // Execute the plan: extract statements from the switch and replace call sites.
-        // Find the dispatch function statement index once.
-        let func_stmt_index = find_dispatch_switch_index(statements, &dispatchers);
-
-        for (call_index, case_extractions) in &linearization_plan {
-            let Some(func_index) = func_stmt_index else {
-                continue;
-            };
-
-            // Navigate to the switch inside the function.
-            let switch = navigate_to_switch(&mut statements[func_index]);
-            let Some(switch) = switch else {
-                continue;
-            };
-
-            let mut replacement_stmts: Vec<Statement<'a>> = Vec::new();
-            for (case_idx, stmt_indices) in case_extractions {
-                let case = &mut switch.cases[*case_idx];
-                for &stmt_idx in stmt_indices {
-                    if stmt_idx < case.consequent.len() {
-                        let stmt = std::mem::replace(
-                            &mut case.consequent[stmt_idx],
-                            context.ast.statement_empty(SPAN),
-                        );
-                        replacement_stmts.push(stmt);
-                    }
-                }
-            }
-
-            if !replacement_stmts.is_empty() {
-                let arena_replacements = context.ast.vec_from_iter(replacement_stmts);
-                operations::replace_statement_with_multiple(
-                    statements,
-                    *call_index,
-                    arena_replacements,
-                    context,
-                );
-                changed = true;
-            }
+        // Phase 3b: Rewrite dispatch calls in this scope.
+        // M6(15, args) -> M6_15(args)
+        for statement in statements.iter_mut() {
+            changed |= rewrite_dispatch_calls(statement, &dispatchers, context);
         }
 
         changed
@@ -475,6 +393,302 @@ fn navigate_to_switch<'a, 'b>(
         }
     }
     None
+}
+
+/// Resolve an arithmetic state transition in place.
+///
+/// If the statement is `state = state + N` or `state -= N`, resolves it to
+/// `state = computed_value` using the known case value.
+fn resolve_arithmetic_transition<'a>(
+    statement: &mut Statement<'a>,
+    state_param: &str,
+    case_value: i64,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    let Statement::ExpressionStatement(expr_stmt) = statement else {
+        return false;
+    };
+    let Expression::AssignmentExpression(assignment) = &mut expr_stmt.expression else {
+        return false;
+    };
+    let oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(target) = &assignment.left
+    else {
+        return false;
+    };
+    if target.name.as_str() != state_param {
+        return false;
+    }
+
+    let resolved = match assignment.operator {
+        oxc_syntax::operator::AssignmentOperator::Addition => {
+            extract_numeric_value(&assignment.right).map(|delta| case_value + delta)
+        }
+        oxc_syntax::operator::AssignmentOperator::Subtraction => {
+            extract_numeric_value(&assignment.right).map(|delta| case_value - delta)
+        }
+        _ => None,
+    };
+
+    if let Some(resolved) = resolved {
+        assignment.operator = oxc_syntax::operator::AssignmentOperator::Assign;
+        let raw = context.ast.atom(&resolved.to_string());
+        assignment.right = context.ast.expression_numeric_literal(
+            SPAN,
+            resolved as f64,
+            Some(raw),
+            oxc_syntax::number::NumberBase::Decimal,
+        );
+        true
+    } else {
+        false
+    }
+}
+
+/// Walk a statement recursively looking for dispatch call expressions.
+///
+/// For each call like `M6(15, ...)`, adds 15 to the dispatcher's
+/// `discovered_entry_values`. Also handles `.call(thisArg, N, ...)`.
+fn scan_for_dispatch_calls(
+    statement: &Statement<'_>,
+    dispatchers: &mut HashMap<SymbolId, DispatchFunction>,
+    context: &TraverseCtx<'_, ()>,
+) {
+    match statement {
+        Statement::ExpressionStatement(expr_stmt) => {
+            scan_expression_for_dispatch_calls(&expr_stmt.expression, dispatchers, context);
+        }
+        Statement::VariableDeclaration(declaration) => {
+            for declarator in &declaration.declarations {
+                if let Some(init) = &declarator.init {
+                    scan_expression_for_dispatch_calls(init, dispatchers, context);
+                }
+            }
+        }
+        Statement::ReturnStatement(return_stmt) => {
+            if let Some(argument) = &return_stmt.argument {
+                scan_expression_for_dispatch_calls(argument, dispatchers, context);
+            }
+        }
+        Statement::IfStatement(if_stmt) => {
+            scan_expression_for_dispatch_calls(&if_stmt.test, dispatchers, context);
+            scan_for_dispatch_calls(&if_stmt.consequent, dispatchers, context);
+            if let Some(alternate) = &if_stmt.alternate {
+                scan_for_dispatch_calls(alternate, dispatchers, context);
+            }
+        }
+        Statement::BlockStatement(block) => {
+            for stmt in &block.body {
+                scan_for_dispatch_calls(stmt, dispatchers, context);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Scan an expression recursively for dispatch calls.
+fn scan_expression_for_dispatch_calls(
+    expression: &Expression<'_>,
+    dispatchers: &mut HashMap<SymbolId, DispatchFunction>,
+    context: &TraverseCtx<'_, ()>,
+) {
+    if let Some((symbol_id, entry_value)) = extract_dispatch_call(expression, dispatchers, context)
+        && let Some(dispatch) = dispatchers.get_mut(&symbol_id)
+        && !dispatch.discovered_entry_values.contains(&entry_value)
+    {
+        dispatch.discovered_entry_values.push(entry_value);
+    }
+
+    // Recurse into sub-expressions.
+    match expression {
+        Expression::CallExpression(call) => {
+            scan_expression_for_dispatch_calls(&call.callee, dispatchers, context);
+            for arg in &call.arguments {
+                if let Some(expr) = arg.as_expression() {
+                    scan_expression_for_dispatch_calls(expr, dispatchers, context);
+                }
+            }
+        }
+        Expression::AssignmentExpression(assignment) => {
+            scan_expression_for_dispatch_calls(&assignment.right, dispatchers, context);
+        }
+        Expression::BinaryExpression(binary) => {
+            scan_expression_for_dispatch_calls(&binary.left, dispatchers, context);
+            scan_expression_for_dispatch_calls(&binary.right, dispatchers, context);
+        }
+        Expression::ConditionalExpression(cond) => {
+            scan_expression_for_dispatch_calls(&cond.test, dispatchers, context);
+            scan_expression_for_dispatch_calls(&cond.consequent, dispatchers, context);
+            scan_expression_for_dispatch_calls(&cond.alternate, dispatchers, context);
+        }
+        Expression::SequenceExpression(sequence) => {
+            for expr in &sequence.expressions {
+                scan_expression_for_dispatch_calls(expr, dispatchers, context);
+            }
+        }
+        Expression::LogicalExpression(logical) => {
+            scan_expression_for_dispatch_calls(&logical.left, dispatchers, context);
+            scan_expression_for_dispatch_calls(&logical.right, dispatchers, context);
+        }
+        Expression::UnaryExpression(unary) => {
+            scan_expression_for_dispatch_calls(&unary.argument, dispatchers, context);
+        }
+        Expression::ParenthesizedExpression(paren) => {
+            scan_expression_for_dispatch_calls(&paren.expression, dispatchers, context);
+        }
+        _ => {}
+    }
+}
+
+/// Extract the function name from a statement containing a dispatch function.
+///
+/// For `var M6 = function lK(...) { ... }`, returns `"M6"`.
+/// For `function lK(...) { ... }`, returns `"lK"`.
+fn get_dispatch_func_name(statement: &Statement<'_>) -> Option<String> {
+    match statement {
+        Statement::VariableDeclaration(declaration) => {
+            for declarator in &declaration.declarations {
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id {
+                    return Some(binding.name.to_string());
+                }
+            }
+            None
+        }
+        Statement::FunctionDeclaration(function) => {
+            function.id.as_ref().map(|id| id.name.to_string())
+        }
+        _ => None,
+    }
+}
+
+/// Rewrite dispatch calls in a statement.
+///
+/// Replaces `M6(15, args)` with `M6_15(args)` — changes the callee identifier
+/// name and removes the first argument.
+fn rewrite_dispatch_calls<'a>(
+    statement: &mut Statement<'a>,
+    dispatchers: &HashMap<SymbolId, DispatchFunction>,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    match statement {
+        Statement::ExpressionStatement(expr_stmt) => {
+            rewrite_expression_dispatch_calls(&mut expr_stmt.expression, dispatchers, context)
+        }
+        Statement::VariableDeclaration(declaration) => {
+            let mut changed = false;
+            for declarator in declaration.declarations.iter_mut() {
+                if let Some(init) = &mut declarator.init {
+                    changed |= rewrite_expression_dispatch_calls(init, dispatchers, context);
+                }
+            }
+            changed
+        }
+        Statement::ReturnStatement(return_stmt) => {
+            if let Some(argument) = &mut return_stmt.argument {
+                rewrite_expression_dispatch_calls(argument, dispatchers, context)
+            } else {
+                false
+            }
+        }
+        Statement::IfStatement(if_stmt) => {
+            let mut changed =
+                rewrite_expression_dispatch_calls(&mut if_stmt.test, dispatchers, context);
+            changed |= rewrite_dispatch_calls(&mut if_stmt.consequent, dispatchers, context);
+            if let Some(alternate) = &mut if_stmt.alternate {
+                changed |= rewrite_dispatch_calls(alternate, dispatchers, context);
+            }
+            changed
+        }
+        Statement::BlockStatement(block) => {
+            let mut changed = false;
+            for stmt in block.body.iter_mut() {
+                changed |= rewrite_dispatch_calls(stmt, dispatchers, context);
+            }
+            changed
+        }
+        _ => false,
+    }
+}
+
+/// Rewrite dispatch calls within an expression.
+fn rewrite_expression_dispatch_calls<'a>(
+    expression: &mut Expression<'a>,
+    dispatchers: &HashMap<SymbolId, DispatchFunction>,
+    context: &mut TraverseCtx<'a, ()>,
+) -> bool {
+    let mut changed = false;
+
+    match expression {
+        Expression::CallExpression(call) => {
+            // Check if this is a direct dispatch call: M6(15, ...)
+            if let Expression::Identifier(callee) = &call.callee
+                && let Some(ref_id) = callee.reference_id.get()
+            {
+                let reference = context.scoping().get_reference(ref_id);
+                if let Some(symbol_id) = reference.symbol_id()
+                    && let Some(dispatch) = dispatchers.get(&symbol_id)
+                    && !call.arguments.is_empty()
+                    && let Some(entry) = call.arguments[0]
+                        .as_expression()
+                        .and_then(|e| extract_numeric_value(unwrap_parens(e)))
+                    && dispatch.linearized_entry_values.contains(&entry)
+                {
+                    // Get the function name from the callee.
+                    let func_name = callee.name.to_string();
+                    let new_name = format!("{}_{}", func_name, entry);
+                    let new_atom = context.ast.atom(&new_name);
+
+                    // Replace callee with new identifier.
+                    call.callee = context.ast.expression_identifier(SPAN, new_atom);
+
+                    // Remove the first argument (the entry value).
+                    call.arguments.remove(0);
+                    changed = true;
+                }
+            }
+
+            // Recurse into arguments.
+            for arg in call.arguments.iter_mut() {
+                if let Some(expr) = arg.as_expression_mut() {
+                    changed |= rewrite_expression_dispatch_calls(expr, dispatchers, context);
+                }
+            }
+            // Recurse into callee (for chained calls).
+            changed |= rewrite_expression_dispatch_calls(&mut call.callee, dispatchers, context);
+        }
+        Expression::AssignmentExpression(assignment) => {
+            changed |=
+                rewrite_expression_dispatch_calls(&mut assignment.right, dispatchers, context);
+        }
+        Expression::BinaryExpression(binary) => {
+            changed |= rewrite_expression_dispatch_calls(&mut binary.left, dispatchers, context);
+            changed |= rewrite_expression_dispatch_calls(&mut binary.right, dispatchers, context);
+        }
+        Expression::ConditionalExpression(cond) => {
+            changed |= rewrite_expression_dispatch_calls(&mut cond.test, dispatchers, context);
+            changed |=
+                rewrite_expression_dispatch_calls(&mut cond.consequent, dispatchers, context);
+            changed |= rewrite_expression_dispatch_calls(&mut cond.alternate, dispatchers, context);
+        }
+        Expression::SequenceExpression(sequence) => {
+            for expr in sequence.expressions.iter_mut() {
+                changed |= rewrite_expression_dispatch_calls(expr, dispatchers, context);
+            }
+        }
+        Expression::LogicalExpression(logical) => {
+            changed |= rewrite_expression_dispatch_calls(&mut logical.left, dispatchers, context);
+            changed |= rewrite_expression_dispatch_calls(&mut logical.right, dispatchers, context);
+        }
+        Expression::UnaryExpression(unary) => {
+            changed |= rewrite_expression_dispatch_calls(&mut unary.argument, dispatchers, context);
+        }
+        Expression::ParenthesizedExpression(paren) => {
+            changed |=
+                rewrite_expression_dispatch_calls(&mut paren.expression, dispatchers, context);
+        }
+        _ => {}
+    }
+
+    changed
 }
 
 /// Analyze a function to determine if it's a dispatch function.
@@ -568,6 +782,8 @@ fn analyze_dispatch_function(function: &oxc_ast::ast::Function<'_>) -> Option<Di
         state_param_name,
         exit_value,
         cases,
+        discovered_entry_values: Vec::new(),
+        linearized_entry_values: Vec::new(),
     })
 }
 
