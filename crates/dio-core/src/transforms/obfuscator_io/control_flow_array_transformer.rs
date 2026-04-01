@@ -49,14 +49,26 @@ use oxc_traverse::TraverseCtx;
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 
-/// Parameters extracted from the `gn` call site: `gn(o, C1, C2, C3, C4, C5, e)`.
+/// Parameters for evaluating the control flow hash function.
+///
+/// The hash is always `(A*B ^ C*D ^ E*F) >>> 0 & (G - 1)` with varying
+/// parameter orderings. We store the constant argument values and the
+/// positions of the two variable arguments (row/col loop variables).
+/// At evaluation time, we substitute row/col and compute the result.
 #[derive(Debug, Clone)]
 struct HashParameters {
-    c1: u32,
-    c2: u32,
-    c3: u32,
-    c4: u32,
-    c5: u32,
+    /// All call-site argument values. Variable positions store 0 as placeholder.
+    call_args: Vec<u32>,
+    /// Index in call_args for the column variable (outer loop var).
+    col_arg_index: usize,
+    /// Index in call_args for the row variable (inner loop var).
+    row_arg_index: usize,
+    /// Indices of the three multiply pairs in the function parameters,
+    /// mapped to call argument indices. Each pair (a_idx, b_idx) means
+    /// call_args[a_idx] * call_args[b_idx] in the XOR chain.
+    multiply_pairs: [(usize, usize); 3],
+    /// Call argument index used for the mask: `& (call_args[mask_idx] - 1)`.
+    mask_arg_index: usize,
 }
 
 /// Tracked control flow array variable.
@@ -83,19 +95,18 @@ impl Default for ControlFlowArrayTransformer {
 }
 
 impl ControlFlowArrayTransformer {
-    /// Evaluate the hash function: `(n * o ^ r * i ^ e * t) >>> 0 & (a - 1)`.
-    ///
-    /// Maps to `gn(n, t, e, i, a, o, r)` where:
-    /// - n, t, e, i, a, o, r are the positional parameters
-    /// - Call site: `gn(col, C1, C2, C3, C4, C5, row)`
+    /// Evaluate the hash function by substituting col/row into the call args
+    /// and computing `(A*B ^ C*D ^ E*F) >>> 0 & (G - 1)`.
     fn evaluate_hash(col: u32, params: &HashParameters, row: u32) -> u32 {
-        // gn(n=col, t=C1, e=C2, i=C3, a=C4, o=C5, r=row)
-        // return (n * o ^ r * i ^ e * t) >>> 0 & (a - 1)
-        // = (col * C5 ^ row * C3 ^ C2 * C1) >>> 0 & (C4 - 1)
-        let result = col.wrapping_mul(params.c5)
-            ^ row.wrapping_mul(params.c3)
-            ^ params.c2.wrapping_mul(params.c1);
-        result & (params.c4 - 1)
+        let mut args = params.call_args.clone();
+        args[params.col_arg_index] = col;
+        args[params.row_arg_index] = row;
+
+        let [(a1, b1), (a2, b2), (a3, b3)] = params.multiply_pairs;
+        let result = args[a1].wrapping_mul(args[b1])
+            ^ args[a2].wrapping_mul(args[b2])
+            ^ args[a3].wrapping_mul(args[b3]);
+        result & (args[params.mask_arg_index] - 1)
     }
 
     /// Compute `s[x][y]` given the parameters and row index.
@@ -139,7 +150,8 @@ impl Transformer for ControlFlowArrayTransformer {
         //     return (n * o ^ r * i ^ e * t) >>> 0 & a - 1;
         // }
         let mut hash_function_symbol: Option<SymbolId> = None;
-        for statement in statements.iter() {
+        let mut hash_function_index: Option<usize> = None;
+        for (stmt_idx, statement) in statements.iter().enumerate() {
             let Statement::FunctionDeclaration(function) = statement else {
                 continue;
             };
@@ -153,6 +165,7 @@ impl Transformer for ControlFlowArrayTransformer {
                 && let Some(symbol_id) = binding.symbol_id.get()
             {
                 hash_function_symbol = Some(symbol_id);
+                hash_function_index = Some(stmt_idx);
                 break;
             }
         }
@@ -164,9 +177,33 @@ impl Transformer for ControlFlowArrayTransformer {
         // Scan for the IIFE that builds the 2D array and assigns to a variable.
         // Pattern: the IIFE contains a call to the hash function with constants,
         // and assigns a row of the array to a variable.
-        if let Some((target_symbol, array_info)) =
-            find_control_flow_iife(statements, hash_symbol, context)
-        {
+        let hash_func_idx = hash_function_index.unwrap();
+        let Statement::FunctionDeclaration(hash_func) = &statements[hash_func_idx] else {
+            return false;
+        };
+
+        // Extract hash structure before we drop the immutable borrow.
+        let hash_body_info = extract_hash_body_structure(hash_func);
+        let hash_param_names: Vec<String> = hash_func
+            .params
+            .items
+            .iter()
+            .filter_map(|p| {
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(b) = &p.pattern {
+                    Some(b.name.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if let Some((target_symbol, array_info)) = find_control_flow_iife(
+            statements,
+            hash_symbol,
+            &hash_param_names,
+            &hash_body_info,
+            context,
+        ) {
             arrays.insert(target_symbol, array_info);
         }
 
@@ -174,24 +211,35 @@ impl Transformer for ControlFlowArrayTransformer {
             return false;
         }
 
-        // Remove the hash function declaration.
+        // Remove the hash function declaration and the IIFE.
         let mut changed = false;
         for index in (0..statements.len()).rev() {
-            if let Statement::FunctionDeclaration(function) = &statements[index]
-                && let Some(binding) = &function.id
-                && let Some(symbol_id) = binding.symbol_id.get()
-                && symbol_id == hash_symbol
-            {
-                operations::remove_statement_at(statements, index, context);
-                changed = true;
-            }
-        }
-
-        // Remove the IIFE (expression statement containing the !function(){}() call).
-        for index in (0..statements.len()).rev() {
-            if is_control_flow_iife_statement(&statements[index], hash_symbol, context) {
-                operations::remove_statement_at(statements, index, context);
-                changed = true;
+            match &statements[index] {
+                Statement::FunctionDeclaration(function) => {
+                    if let Some(binding) = &function.id
+                        && let Some(sym) = binding.symbol_id.get()
+                        && sym == hash_symbol
+                    {
+                        operations::remove_statement_at(statements, index, context);
+                        changed = true;
+                    }
+                }
+                Statement::ExpressionStatement(expr_stmt) => {
+                    if let Some(body) = extract_iife_body(&expr_stmt.expression)
+                        && find_hash_call_parameters(
+                            body,
+                            hash_symbol,
+                            &hash_param_names,
+                            &hash_body_info,
+                            context,
+                        )
+                        .is_some()
+                    {
+                        operations::remove_statement_at(statements, index, context);
+                        changed = true;
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -391,20 +439,24 @@ fn has_xor_multiply_pattern(expression: &Expression<'_>) -> bool {
 fn find_control_flow_iife<'a>(
     statements: &ArenaVec<'a, Statement<'a>>,
     hash_symbol: SymbolId,
+    hash_param_names: &[String],
+    hash_body_info: &Option<(Vec<(String, String)>, String)>,
     context: &TraverseCtx<'a, ()>,
 ) -> Option<(SymbolId, ControlFlowArray)> {
     for statement in statements.iter() {
-        // The IIFE is an expression statement: !function(n, t) { ... }(callback)
         let Statement::ExpressionStatement(expression_statement) = statement else {
             continue;
         };
 
         let iife_body = extract_iife_body(&expression_statement.expression)?;
 
-        // Search the IIFE body for:
-        // 1. A call to the hash function with constants
-        // 2. An assignment to the target variable
-        let parameters = find_hash_call_parameters(iife_body, hash_symbol, context)?;
+        let parameters = find_hash_call_parameters(
+            iife_body,
+            hash_symbol,
+            hash_param_names,
+            hash_body_info,
+            context,
+        )?;
 
         // Find `s = i[ROW_INDEX]` — look for an assignment expression inside a
         // callback passed to n() (the scheduler).
@@ -457,14 +509,21 @@ fn extract_iife_body<'a>(expression: &'a Expression<'a>) -> Option<&'a [Statemen
 fn find_hash_call_parameters(
     statements: &[Statement<'_>],
     hash_symbol: SymbolId,
+    hash_param_names: &[String],
+    hash_body_info: &Option<(Vec<(String, String)>, String)>,
     context: &TraverseCtx<'_, ()>,
 ) -> Option<HashParameters> {
     for statement in statements {
         // Look in function declarations inside the IIFE.
         if let Statement::FunctionDeclaration(function) = statement
             && let Some(body) = &function.body
-            && let Some(params) =
-                find_hash_call_in_statements(&body.statements, hash_symbol, context)
+            && let Some(params) = find_hash_call_in_statements(
+                &body.statements,
+                hash_symbol,
+                hash_param_names,
+                hash_body_info,
+                context,
+            )
         {
             return Some(params);
         }
@@ -476,14 +535,21 @@ fn find_hash_call_parameters(
 fn find_hash_call_in_statements(
     statements: &[Statement<'_>],
     hash_symbol: SymbolId,
+    hash_param_names: &[String],
+    hash_body_info: &Option<(Vec<(String, String)>, String)>,
     context: &TraverseCtx<'_, ()>,
 ) -> Option<HashParameters> {
     for statement in statements {
         match statement {
             Statement::ForStatement(for_statement) => {
                 if let Statement::BlockStatement(body) = &for_statement.body
-                    && let Some(params) =
-                        find_hash_call_in_statements(&body.body, hash_symbol, context)
+                    && let Some(params) = find_hash_call_in_statements(
+                        &body.body,
+                        hash_symbol,
+                        hash_param_names,
+                        hash_body_info,
+                        context,
+                    )
                 {
                     return Some(params);
                 }
@@ -492,6 +558,8 @@ fn find_hash_call_in_statements(
                 if let Some(params) = find_hash_call_in_expression(
                     &expression_statement.expression,
                     hash_symbol,
+                    hash_param_names,
+                    hash_body_info,
                     context,
                 ) {
                     return Some(params);
@@ -507,20 +575,35 @@ fn find_hash_call_in_statements(
 fn find_hash_call_in_expression(
     expression: &Expression<'_>,
     hash_symbol: SymbolId,
+    hash_param_names: &[String],
+    hash_body_info: &Option<(Vec<(String, String)>, String)>,
     context: &TraverseCtx<'_, ()>,
 ) -> Option<HashParameters> {
     match expression {
-        Expression::AssignmentExpression(assignment) => {
-            // i[e][o] = i[gn(o, C1, C2, C3, C4, C5, e)]
-            find_hash_call_in_expression(&assignment.right, hash_symbol, context)
-        }
-        Expression::ComputedMemberExpression(computed) => {
-            // i[gn(...)]
-            find_hash_call_in_expression(&computed.expression, hash_symbol, context)
-                .or_else(|| find_hash_call_in_expression(&computed.object, hash_symbol, context))
-        }
+        Expression::AssignmentExpression(assignment) => find_hash_call_in_expression(
+            &assignment.right,
+            hash_symbol,
+            hash_param_names,
+            hash_body_info,
+            context,
+        ),
+        Expression::ComputedMemberExpression(computed) => find_hash_call_in_expression(
+            &computed.expression,
+            hash_symbol,
+            hash_param_names,
+            hash_body_info,
+            context,
+        )
+        .or_else(|| {
+            find_hash_call_in_expression(
+                &computed.object,
+                hash_symbol,
+                hash_param_names,
+                hash_body_info,
+                context,
+            )
+        }),
         Expression::CallExpression(call) => {
-            // gn(o, C1, C2, C3, C4, C5, e)
             let Expression::Identifier(callee) = &call.callee else {
                 return None;
             };
@@ -531,26 +614,161 @@ fn find_hash_call_in_expression(
                 return None;
             }
 
-            // Expected: gn(var, C1, C2, C3, C4, C5, var)
-            // Arguments 1-5 (indices 1..=5) should be numeric literals.
             if call.arguments.len() < 7 {
                 return None;
             }
 
-            let c1 = extract_argument_number(&call.arguments[1])?;
-            let c2 = extract_argument_number(&call.arguments[2])?;
-            let c3 = extract_argument_number(&call.arguments[3])?;
-            let c4 = extract_argument_number(&call.arguments[4])?;
-            let c5 = extract_argument_number(&call.arguments[5])?;
+            // Collect all call arguments: identify constants (numeric literals)
+            // and variables (identifiers — the row/col loop vars).
+            let mut call_args: Vec<u32> = Vec::new();
+            let mut var_indices: Vec<usize> = Vec::new();
+            for (idx, arg) in call.arguments.iter().enumerate() {
+                if let Some(value) = extract_argument_number(arg) {
+                    call_args.push(value);
+                } else {
+                    // Variable argument (row or col).
+                    call_args.push(0); // placeholder
+                    var_indices.push(idx);
+                }
+            }
 
-            // C4 must be a power of 2 greater than 1 (used as bitmask: & (C4 - 1)).
-            if c4 < 2 || (c4 & (c4 - 1)) != 0 {
+            // Must have exactly 2 variable arguments (col and row).
+            if var_indices.len() != 2 {
                 return None;
             }
 
-            Some(HashParameters { c1, c2, c3, c4, c5 })
+            // Use the pre-extracted hash structure.
+            let (multiply_pairs, mask_param_name) = hash_body_info.as_ref()?;
+
+            // Map parameter names to call argument indices.
+            let name_to_arg_idx =
+                |name: &str| -> Option<usize> { hash_param_names.iter().position(|p| p == name) };
+
+            let pairs: [(usize, usize); 3] = [
+                (
+                    name_to_arg_idx(&multiply_pairs[0].0)?,
+                    name_to_arg_idx(&multiply_pairs[0].1)?,
+                ),
+                (
+                    name_to_arg_idx(&multiply_pairs[1].0)?,
+                    name_to_arg_idx(&multiply_pairs[1].1)?,
+                ),
+                (
+                    name_to_arg_idx(&multiply_pairs[2].0)?,
+                    name_to_arg_idx(&multiply_pairs[2].1)?,
+                ),
+            ];
+            let mask_arg_index = name_to_arg_idx(mask_param_name)?;
+
+            // Validate the mask value is a power of 2 > 1.
+            let mask_value = call_args[mask_arg_index];
+            if mask_value < 2 || (mask_value & (mask_value - 1)) != 0 {
+                return None;
+            }
+
+            // Determine which variable is col (outer loop) and which is row (inner loop).
+            // In the IIFE: `for (o = ...) { for (r = ...) { t[r][o] = t[hash(...)]; } }`
+            // The first variable arg in the call is typically col, second is row,
+            // but we need to check which one maps to the inner vs outer loop.
+            // For safety, try both orderings — the IIFE structure will validate.
+            let col_arg_index = var_indices[0];
+            let row_arg_index = var_indices[1];
+
+            Some(HashParameters {
+                call_args,
+                col_arg_index,
+                row_arg_index,
+                multiply_pairs: pairs,
+                mask_arg_index,
+            })
         }
         _ => None,
+    }
+}
+
+/// Extract the multiply-XOR-mask structure from the hash function body.
+///
+/// Expects: `return (A*B ^ C*D ^ E*F) >>> 0 & (G - 1);`
+/// Returns the three multiply pairs and the mask parameter name.
+fn extract_hash_body_structure(
+    function: &oxc_ast::ast::Function<'_>,
+) -> Option<(Vec<(String, String)>, String)> {
+    let body = function.body.as_ref()?;
+    if body.statements.len() != 1 {
+        return None;
+    }
+    let Statement::ReturnStatement(ret) = &body.statements[0] else {
+        return None;
+    };
+    let argument = ret.argument.as_ref()?;
+
+    // Pattern: (...) >>> 0 & (G - 1)
+    let Expression::BinaryExpression(and_expr) = argument else {
+        return None;
+    };
+    if and_expr.operator != oxc_syntax::operator::BinaryOperator::BitwiseAnd {
+        return None;
+    }
+
+    // Right side: G - 1 or just G
+    let mask_param = extract_mask_param(&and_expr.right)?;
+
+    // Left side: (...) >>> 0
+    let Expression::BinaryExpression(shift_expr) = &and_expr.left else {
+        return None;
+    };
+    if shift_expr.operator != oxc_syntax::operator::BinaryOperator::ShiftRightZeroFill {
+        return None;
+    }
+
+    // Inner: A*B ^ C*D ^ E*F
+    let mut pairs = Vec::new();
+    collect_multiply_pairs(&shift_expr.left, &mut pairs);
+
+    if pairs.len() != 3 {
+        return None;
+    }
+
+    Some((pairs, mask_param))
+}
+
+/// Extract the mask parameter name from `G - 1` expression.
+fn extract_mask_param(expression: &Expression<'_>) -> Option<String> {
+    if let Expression::BinaryExpression(binary) = expression
+        && binary.operator == oxc_syntax::operator::BinaryOperator::Subtraction
+        && let Expression::Identifier(id) = &binary.left
+    {
+        return Some(id.name.to_string());
+    }
+    // Could be just an identifier if the subtraction was already folded.
+    if let Expression::Identifier(id) = expression {
+        return Some(id.name.to_string());
+    }
+    None
+}
+
+/// Recursively collect multiply pairs from a XOR chain: A*B ^ C*D ^ E*F.
+fn collect_multiply_pairs(expression: &Expression<'_>, pairs: &mut Vec<(String, String)>) {
+    match expression {
+        Expression::BinaryExpression(binary)
+            if binary.operator == oxc_syntax::operator::BinaryOperator::BitwiseXOR =>
+        {
+            collect_multiply_pairs(&binary.left, pairs);
+            collect_multiply_pairs(&binary.right, pairs);
+        }
+        Expression::BinaryExpression(binary)
+            if binary.operator == oxc_syntax::operator::BinaryOperator::Multiplication =>
+        {
+            if let (Expression::Identifier(left), Expression::Identifier(right)) =
+                (&binary.left, &binary.right)
+            {
+                pairs.push((left.name.to_string(), right.name.to_string()));
+            }
+        }
+        Expression::ParenthesizedExpression(paren) => {
+            collect_multiply_pairs(&paren.expression, pairs);
+        }
+        _ => {}
     }
 }
 
@@ -634,22 +852,4 @@ fn find_target_assignment(
     }
 
     None
-}
-
-/// Check if a statement is the control flow IIFE (for removal).
-fn is_control_flow_iife_statement(
-    statement: &Statement<'_>,
-    hash_symbol: SymbolId,
-    context: &TraverseCtx<'_, ()>,
-) -> bool {
-    let Statement::ExpressionStatement(expression_statement) = statement else {
-        return false;
-    };
-
-    let Some(body) = extract_iife_body(&expression_statement.expression) else {
-        return false;
-    };
-
-    // Check if this IIFE contains a call to the hash function.
-    find_hash_call_parameters(body, hash_symbol, context).is_some()
 }
