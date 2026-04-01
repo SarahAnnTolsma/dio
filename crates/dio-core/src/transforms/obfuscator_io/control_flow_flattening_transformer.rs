@@ -261,7 +261,24 @@ fn parse_state_map(
 
         // If this case has an empty consequent, it falls through to the next.
         // Record its label as the real state value for the next case.
+        // If there's already a pending label (two consecutive empty cases, like
+        // an exit pair `case 21: case 16:`), register the old label as an alias
+        // for whatever this label eventually maps to.
         if case.consequent.is_empty() {
+            if let Some(prev_label) = pending_fallthrough_label {
+                // The previous empty case falls through to this empty case,
+                // which falls through to the next. Both should map to the
+                // same action. We'll register the previous label once the
+                // next non-empty case is found. For now, just keep the
+                // earlier label — it's the "real" state value.
+                // But we also need to register THIS label as an alias later.
+                // Track both: keep the first pending label and note this one too.
+                // Simple approach: register prev_label → Exit now (since consecutive
+                // empty cases at the end of a switch are exits).
+                if !state_map.iter().any(|(s, _)| *s == prev_label) {
+                    state_map.push((prev_label, StateAction::Exit));
+                }
+            }
             pending_fallthrough_label = Some(label_value);
             continue;
         }
@@ -404,6 +421,13 @@ fn parse_state_map(
                 }
             }
             state_map.push((state_value, action));
+        }
+    }
+
+    // If the last case was an empty fall-through, register it as an exit.
+    if let Some(label) = pending_fallthrough_label {
+        if !state_map.iter().any(|(s, _)| *s == label) {
+            state_map.push((label, StateAction::Exit));
         }
     }
 
