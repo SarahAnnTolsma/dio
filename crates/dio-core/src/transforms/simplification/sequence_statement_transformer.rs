@@ -24,6 +24,7 @@ use oxc_span::SPAN;
 use oxc_traverse::TraverseCtx;
 
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+use crate::utils::unwrap_parens_mut;
 
 /// Hoists leading expressions from sequence expressions in return, if, while,
 /// throw, switch, and for (test position) statements.
@@ -144,13 +145,4 @@ fn try_extract_leading_expressions<'a>(
     *target_expression = last;
 
     Some(extracted)
-}
-
-/// Unwrap parenthesized expressions to get a mutable reference to the inner expression.
-fn unwrap_parens_mut<'a, 'b>(expression: &'b mut Expression<'a>) -> &'b mut Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &mut paren.expression;
-    }
-    current
 }

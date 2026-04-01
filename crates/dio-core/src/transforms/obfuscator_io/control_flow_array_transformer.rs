@@ -351,7 +351,10 @@ fn extract_array_index(expression: &Expression<'_>) -> Option<u32> {
                 None
             }
         }
-        Expression::StringLiteral(string) => string.value.as_str().parse::<u32>().ok(),
+        Expression::StringLiteral(string) => {
+            let value = string.value.as_str().parse::<u32>().ok()?;
+            if value < 256 { Some(value) } else { None }
+        }
         _ => None,
     }
 }

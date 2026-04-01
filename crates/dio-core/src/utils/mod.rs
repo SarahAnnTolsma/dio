@@ -16,6 +16,15 @@ pub fn unwrap_parens<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'
     current
 }
 
+/// Unwrap parenthesized expressions to get the inner mutable expression.
+pub fn unwrap_parens_mut<'a, 'b>(expression: &'b mut Expression<'a>) -> &'b mut Expression<'a> {
+    let mut current = expression;
+    while let Expression::ParenthesizedExpression(paren) = current {
+        current = &mut paren.expression;
+    }
+    current
+}
+
 const STANDARD_BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 

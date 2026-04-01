@@ -85,7 +85,7 @@ if let (Expression::NumericLiteral(l), Expression::NumericLiteral(r)) =
     (unwrap_parens(&binary.left), unwrap_parens(&binary.right)) { ... }
 ```
 
-**Do not define a local `unwrap_parens` function** — always import from `crate::utils::unwrap_parens`. This applies to conditions in if/ternary, operands in binary expressions, arguments in function calls, and any other context where the parser may have wrapped an expression in parens.
+**Do not define local `unwrap_parens` or `unwrap_parens_mut` functions** — always import from `crate::utils`. Both the immutable (`unwrap_parens`) and mutable (`unwrap_parens_mut`) variants are available. This applies to conditions in if/ternary, operands in binary expressions, arguments in function calls, and any other context where the parser may have wrapped an expression in parens.
 
 ### 5. Creating new BlockStatements
 
@@ -160,7 +160,7 @@ Transformers must identify patterns by structure (AST shape, parameter count, fu
 
 ### Use shared utilities from `crate::utils`
 
-- `unwrap_parens()` — always import from `crate::utils`, never define locally.
+- `unwrap_parens()` and `unwrap_parens_mut()` — always import from `crate::utils`, never define locally.
 - `base64_decode()`, `base64_rc4_decode()`, `rc4_decrypt()` — in `crate::utils`.
 - `eval::try_eval()`, `eval::js_parse_int()` — in `crate::utils::eval`.
 

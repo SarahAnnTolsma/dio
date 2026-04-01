@@ -71,6 +71,16 @@ impl Transformer for LiteralMethodEvaluationTransformer {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Convert a Rust string to a Vec of UTF-16 code units (matching JavaScript string semantics).
+fn to_utf16_code_units(s: &str) -> Vec<u16> {
+    s.encode_utf16().collect()
+}
+
+/// Convert a slice of UTF-16 code units back to a Rust String.
+fn from_utf16_code_units(units: &[u16]) -> String {
+    String::from_utf16_lossy(units)
+}
+
 /// Create a numeric literal expression.
 fn make_numeric_literal<'a>(context: &TraverseCtx<'a, ()>, value: f64) -> Expression<'a> {
     let raw = context.ast.atom(&format_number(value));
@@ -204,12 +214,19 @@ fn try_evaluate_char_at<'a>(
     let Expression::NumericLiteral(number) = unwrap_parens(argument) else {
         return false;
     };
-    let index = number.value as usize;
-    let chars: Vec<char> = string_value.chars().collect();
-    if index >= chars.len() {
+    let index_value = number.value;
+    if index_value < 0.0 || index_value.fract() != 0.0 {
         return false;
     }
-    let result = chars[index].to_string();
+    let index = index_value as usize;
+    let units = to_utf16_code_units(string_value);
+    if index >= units.len() {
+        return false;
+    }
+    let result = match char::from_u32(units[index] as u32) {
+        Some(character) => character.to_string(),
+        None => return false,
+    };
     let replacement = make_string_literal(context, &result);
     operations::replace_expression(expression, replacement, context);
     true
@@ -233,12 +250,16 @@ fn try_evaluate_char_code_at<'a>(
     let Expression::NumericLiteral(number) = unwrap_parens(argument) else {
         return false;
     };
-    let index = number.value as usize;
-    let chars: Vec<char> = string_value.chars().collect();
-    if index >= chars.len() {
+    let index_value = number.value;
+    if index_value < 0.0 || index_value.fract() != 0.0 {
         return false;
     }
-    let code = chars[index] as u32;
+    let index = index_value as usize;
+    let units = to_utf16_code_units(string_value);
+    if index >= units.len() {
+        return false;
+    }
+    let code = units[index] as u32;
     let replacement = make_numeric_literal(context, code as f64);
     operations::replace_expression(expression, replacement, context);
     true
@@ -389,7 +410,8 @@ fn try_evaluate_slice<'a>(
     let Expression::NumericLiteral(start_number) = unwrap_parens(first_argument) else {
         return false;
     };
-    let length = string_value.len() as i64;
+    let units = to_utf16_code_units(string_value);
+    let length = units.len() as i64;
     let mut start = start_number.value as i64;
 
     // Handle negative start index.
@@ -412,7 +434,7 @@ fn try_evaluate_slice<'a>(
         }
         end.min(length) as usize
     } else {
-        string_value.len()
+        units.len()
     };
 
     if start > end {
@@ -421,13 +443,9 @@ fn try_evaluate_slice<'a>(
         return true;
     }
 
-    // Safety: we operate on byte indices only when the string is ASCII-safe.
-    // For full correctness with multi-byte chars, use char-based slicing.
-    let chars: Vec<char> = string_value.chars().collect();
-    let char_length = chars.len();
-    let safe_start = start.min(char_length);
-    let safe_end = end.min(char_length);
-    let result: String = chars[safe_start..safe_end].iter().collect();
+    let safe_start = start.min(units.len());
+    let safe_end = end.min(units.len());
+    let result = from_utf16_code_units(&units[safe_start..safe_end]);
 
     let replacement = make_string_literal(context, &result);
     operations::replace_expression(expression, replacement, context);
@@ -454,12 +472,12 @@ fn try_evaluate_substring<'a>(
         return false;
     };
 
-    let chars: Vec<char> = string_value.chars().collect();
-    let char_length = chars.len();
+    let units = to_utf16_code_units(string_value);
+    let unit_length = units.len();
 
     // JavaScript substring clamps negatives to 0.
     let mut start = (start_number.value as i64).max(0) as usize;
-    start = start.min(char_length);
+    start = start.min(unit_length);
 
     let mut end = if call.arguments.len() == 2 {
         let Some(second_argument) = call.arguments[1].as_expression() else {
@@ -469,9 +487,9 @@ fn try_evaluate_substring<'a>(
             return false;
         };
         let end = (end_number.value as i64).max(0) as usize;
-        end.min(char_length)
+        end.min(unit_length)
     } else {
-        char_length
+        unit_length
     };
 
     // JavaScript substring swaps start and end if start > end.
@@ -479,7 +497,7 @@ fn try_evaluate_substring<'a>(
         std::mem::swap(&mut start, &mut end);
     }
 
-    let result: String = chars[start..end].iter().collect();
+    let result = from_utf16_code_units(&units[start..end]);
     let replacement = make_string_literal(context, &result);
     operations::replace_expression(expression, replacement, context);
     true
@@ -558,8 +576,8 @@ fn try_evaluate_repeat<'a>(
         return false;
     };
     let count = count_number.value as usize;
-    // Reject unreasonably large repeat counts.
-    if count > 1000 {
+    // Reject unreasonably large repeat counts or total sizes.
+    if count > 1000 || string_value.len() * count > 100_000 {
         return false;
     }
     let result = string_value.repeat(count);
@@ -651,7 +669,7 @@ fn try_evaluate_static_member_access<'a>(
 
     // `"hello".length` -> `5`
     if let Expression::StringLiteral(string_literal) = object {
-        let length = string_literal.value.as_str().len() as f64;
+        let length = string_literal.value.as_str().encode_utf16().count() as f64;
         let replacement = make_numeric_literal(context, length);
         operations::replace_expression(expression, replacement, context);
         return true;
@@ -695,11 +713,14 @@ fn try_evaluate_computed_member_access<'a>(
 
     // `"hello"[0]` -> `"h"`
     if let Expression::StringLiteral(string_literal) = object {
-        let chars: Vec<char> = string_literal.value.as_str().chars().collect();
-        if index >= chars.len() {
+        let units = to_utf16_code_units(string_literal.value.as_str());
+        if index >= units.len() {
             return false;
         }
-        let result = chars[index].to_string();
+        let result = match char::from_u32(units[index] as u32) {
+            Some(character) => character.to_string(),
+            None => return false,
+        };
         let replacement = make_string_literal(context, &result);
         operations::replace_expression(expression, replacement, context);
         return true;

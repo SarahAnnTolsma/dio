@@ -24,7 +24,7 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
-use crate::utils::unwrap_parens;
+use crate::utils::{unwrap_parens, unwrap_parens_mut};
 
 /// Simplifies complex bitwise and mixed boolean-arithmetic expressions by
 /// identifying the canonical operation through truth table evaluation.
@@ -534,13 +534,4 @@ fn extract_first_identifier<'a>(
         }
         _ => None,
     }
-}
-
-/// Unwrap parenthesized expressions mutably.
-fn unwrap_parens_mut<'a, 'b>(expression: &'b mut Expression<'a>) -> &'b mut Expression<'a> {
-    let mut current = expression;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &mut paren.expression;
-    }
-    current
 }
