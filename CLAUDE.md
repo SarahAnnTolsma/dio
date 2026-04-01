@@ -12,6 +12,18 @@ cargo fmt                # Format all code
 cargo clippy             # Lint all code
 ```
 
+## Before Committing
+
+All three checks must pass before committing. CI enforces these on every PR:
+
+```bash
+cargo fmt --all -- --check                # No formatting issues
+cargo clippy --all -- -D warnings         # No clippy warnings (treated as errors)
+cargo test --all                          # All tests pass
+```
+
+**Do not commit code with clippy warnings.** The CI pipeline uses `-D warnings` which treats all warnings as errors. Fix all warnings before committing — including pre-existing warnings in files you didn't change. If touching a file introduces or surfaces warnings, fix them all. No exceptions.
+
 ## Project Structure
 
 - `crates/dio-core/` — Core deobfuscation library (all logic lives here)
