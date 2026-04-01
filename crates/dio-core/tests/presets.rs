@@ -51,24 +51,24 @@ fn obfuscator_io_inlines_proxy_functions() {
 #[test]
 fn jsfuck_folds_coercion() {
     assert_eq!(
-        deobfuscate_with(Preset::JsFuck, "var x = +[];"),
-        "var x = 0;"
+        deobfuscate_with(Preset::JsFuck, "var x = +[]; f(x);"),
+        "f(0);"
     );
 }
 
 #[test]
 fn jsfuck_double_not_array() {
     assert_eq!(
-        deobfuscate_with(Preset::JsFuck, "var x = !![];"),
-        "var x = true;"
+        deobfuscate_with(Preset::JsFuck, "var x = !![]; f(x);"),
+        "f(true);"
     );
 }
 
 #[test]
 fn jsfuck_plus_true() {
     assert_eq!(
-        deobfuscate_with(Preset::JsFuck, "var x = +!![];"),
-        "var x = 1;"
+        deobfuscate_with(Preset::JsFuck, "var x = +!![]; f(x);"),
+        "f(1);"
     );
 }
 

@@ -1,26 +1,18 @@
 //! Transformer preset for JSFuck-encoded JavaScript.
 //!
 //! JSFuck uses only `[]()!+` characters, relying on type coercion to
-//! construct arbitrary JavaScript. This preset provides a focused subset
-//! of transformers optimized for resolving coercion chains.
+//! construct arbitrary JavaScript. This preset includes all general-purpose
+//! transformers — the constant folding transformer already handles JSFuck
+//! coercion chains (`![] → false`, `+[] → 0`, `!![] → true`, `+!![] → 1`).
 
 use crate::transformer::Transformer;
-use crate::transforms::{constant, evaluation, simplification, string};
+use crate::transforms;
 
 /// Returns transformers targeting JSFuck patterns.
+///
+/// Includes all default transformers since JSFuck-encoded code benefits
+/// from the full pipeline (constant folding, string concatenation, dead
+/// code elimination, etc.) after the coercion chains are resolved.
 pub fn transformers() -> Vec<Box<dyn Transformer>> {
-    vec![
-        // Constant folding handles type coercion chains:
-        // ![] → false, +[] → 0, !![] → true, +!![] → 1
-        Box::new(constant::ConstantFoldingTransformer),
-        // String concatenation merges coerced string fragments
-        Box::new(string::StringConcatenationTransformer),
-        // Built-in evaluation handles Number(), Boolean(), String.fromCharCode()
-        Box::new(evaluation::BuiltinEvaluationTransformer),
-        // Literal method evaluation handles "string".charAt(), etc.
-        Box::new(evaluation::LiteralMethodEvaluationTransformer),
-        // Comma and member simplification for intermediate forms
-        Box::new(simplification::CommaTransformer),
-        Box::new(simplification::MemberTransformer),
-    ]
+    transforms::default_transformers()
 }
