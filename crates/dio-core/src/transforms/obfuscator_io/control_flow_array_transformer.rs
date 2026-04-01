@@ -603,13 +603,55 @@ fn find_hash_call_in_expression(
     context: &TraverseCtx<'_, ()>,
 ) -> Option<HashParameters> {
     match expression {
-        Expression::AssignmentExpression(assignment) => find_hash_call_in_expression(
-            &assignment.right,
-            hash_symbol,
-            hash_param_names,
-            hash_body_info,
-            context,
-        ),
+        Expression::AssignmentExpression(assignment) => {
+            // t[row_var][col_var] = t[hash(...)]
+            // Extract the hash params from the right side.
+            let mut params = find_hash_call_in_expression(
+                &assignment.right,
+                hash_symbol,
+                hash_param_names,
+                hash_body_info,
+                context,
+            )?;
+
+            // Determine row/col ordering from the left side: t[row_var][col_var].
+            // The inner member index is the row variable, the outer is the col.
+            // Find which call argument positions these variables correspond to.
+            if let oxc_ast::ast::AssignmentTarget::ComputedMemberExpression(outer) =
+                &assignment.left
+                && let Expression::Identifier(col_id) = &outer.expression
+                && let Expression::ComputedMemberExpression(inner) = &outer.object
+                && let Expression::Identifier(row_id) = &inner.expression
+            {
+                let col_name = col_id.name.as_str();
+                let row_name = row_id.name.as_str();
+
+                // Find which call arg positions these variables appear at.
+                // The hash call is like hash(o, C1, C2, C3, C4, C5, e)
+                // where o and e are identifiers matching col_name/row_name.
+                if let Expression::CallExpression(call) =
+                    find_hash_call_expression(&assignment.right, hash_symbol, context)?
+                {
+                    let mut found_col = None;
+                    let mut found_row = None;
+                    for (idx, arg) in call.arguments.iter().enumerate() {
+                        if let Some(Expression::Identifier(id)) = arg.as_expression() {
+                            if id.name.as_str() == col_name {
+                                found_col = Some(idx);
+                            } else if id.name.as_str() == row_name {
+                                found_row = Some(idx);
+                            }
+                        }
+                    }
+                    if let (Some(col_idx), Some(row_idx)) = (found_col, found_row) {
+                        params.col_arg_index = col_idx;
+                        params.row_arg_index = row_idx;
+                    }
+                }
+            }
+
+            Some(params)
+        }
         Expression::ComputedMemberExpression(computed) => find_hash_call_in_expression(
             &computed.expression,
             hash_symbol,
@@ -694,8 +736,14 @@ fn find_hash_call_in_expression(
             // The first variable arg in the call is typically col, second is row,
             // but we need to check which one maps to the inner vs outer loop.
             // For safety, try both orderings — the IIFE structure will validate.
-            let col_arg_index = var_indices[0];
-            let row_arg_index = var_indices[1];
+            // In the IIFE: t[inner_var][outer_var] = t[hash(constants, inner_var, outer_var)]
+            // The FIRST variable argument in the call corresponds to the INNER loop
+            // (row = first dimension of t), and the SECOND to the OUTER loop
+            // (col = second dimension of t). But in compute_value(x, y), x is the
+            // column (second dimension) and y is passed to the second hash step.
+            // So: col_arg_index = second variable arg, row_arg_index = first variable arg.
+            let row_arg_index = var_indices[0];
+            let col_arg_index = var_indices[1];
 
             Some(HashParameters {
                 call_args,
@@ -792,6 +840,32 @@ fn collect_multiply_pairs(expression: &Expression<'_>, pairs: &mut Vec<(String, 
             collect_multiply_pairs(&paren.expression, pairs);
         }
         _ => {}
+    }
+}
+
+/// Find the hash function call expression within an expression tree.
+fn find_hash_call_expression<'a, 'b>(
+    expression: &'b Expression<'a>,
+    hash_symbol: SymbolId,
+    context: &TraverseCtx<'a, ()>,
+) -> Option<&'b Expression<'a>> {
+    match expression {
+        Expression::ComputedMemberExpression(computed) => {
+            find_hash_call_expression(&computed.expression, hash_symbol, context)
+                .or_else(|| find_hash_call_expression(&computed.object, hash_symbol, context))
+        }
+        Expression::CallExpression(call) => {
+            if let Expression::Identifier(callee) = &call.callee
+                && let Some(ref_id) = callee.reference_id.get()
+            {
+                let reference = context.scoping().get_reference(ref_id);
+                if reference.symbol_id() == Some(hash_symbol) {
+                    return Some(expression);
+                }
+            }
+            None
+        }
+        _ => None,
     }
 }
 
