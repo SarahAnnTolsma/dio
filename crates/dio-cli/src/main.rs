@@ -25,10 +25,10 @@ struct Arguments {
     #[arg(long)]
     max_iterations: Option<usize>,
 
-    /// Transformer preset for a specific obfuscation tool.
-    /// Options: generic (default), obfuscator-io, datadome, jsfuck.
+    /// Comma-separated list of transformer presets.
+    /// Available: generic, obfuscator-io, datadome, debundler, jsfuck.
     #[arg(long, default_value = "generic")]
-    preset: String,
+    presets: String,
 
     /// Print transform diagnostics to stderr.
     #[arg(long)]
@@ -55,18 +55,34 @@ fn main() {
         })
     };
 
-    // Resolve preset.
-    let preset = Preset::from_name(&arguments.preset).unwrap_or_else(|| {
-        eprintln!(
-            "Unknown preset '{}'. Available: {}",
-            arguments.preset,
-            Preset::all_names().join(", ")
-        );
-        process::exit(1);
-    });
+    // Resolve presets (comma-separated).
+    let preset_names: Vec<&str> = arguments.presets.split(',').map(|s| s.trim()).collect();
+    let mut presets: Vec<Preset> = Vec::new();
+    for name in &preset_names {
+        match Preset::from_name(name) {
+            Some(preset) => presets.push(preset),
+            None => {
+                eprintln!(
+                    "Unknown preset '{}'. Available: {}",
+                    name,
+                    Preset::all_names().join(", ")
+                );
+                process::exit(1);
+            }
+        }
+    }
 
-    // Build deobfuscator.
-    let mut deobfuscator = Deobfuscator::with_preset(preset);
+    // Build deobfuscator from the combined presets.
+    let mut deobfuscator = if presets.len() == 1 {
+        Deobfuscator::with_preset(presets[0])
+    } else {
+        let mut deobfuscator = Deobfuscator::empty();
+        for preset in &presets {
+            deobfuscator.add_transformers(preset.transformers());
+        }
+        deobfuscator
+    };
+
     if let Some(max_iterations) = arguments.max_iterations {
         deobfuscator = deobfuscator.with_max_iterations(max_iterations);
     }

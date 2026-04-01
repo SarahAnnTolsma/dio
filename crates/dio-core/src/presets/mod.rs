@@ -13,6 +13,7 @@
 //! ```
 
 mod datadome;
+mod debundler;
 mod jsfuck;
 mod obfuscator_io;
 
@@ -37,6 +38,10 @@ pub enum Preset {
     /// `setTimeout(function() { x = value; }, 0)` unwrapping.
     DataDome,
 
+    /// Annotates bundled modules (Browserify, etc.) with JSDoc comments
+    /// and named functions for readability. Can be combined with other presets.
+    Debundler,
+
     /// Targets JSFuck-encoded JavaScript (`[]()!+` only).
     /// Focused subset: constant folding with type coercion, string
     /// concatenation, and built-in evaluation.
@@ -50,6 +55,7 @@ impl Preset {
             Preset::Generic => transforms::default_transformers(),
             Preset::ObfuscatorIo => obfuscator_io::transformers(),
             Preset::DataDome => datadome::transformers(),
+            Preset::Debundler => debundler::transformers(),
             Preset::JsFuck => jsfuck::transformers(),
         }
     }
@@ -62,6 +68,7 @@ impl Preset {
                 Some(Preset::ObfuscatorIo)
             }
             "datadome" | "data-dome" | "data_dome" => Some(Preset::DataDome),
+            "debundler" | "de-bundler" | "unbundler" => Some(Preset::Debundler),
             "jsfuck" => Some(Preset::JsFuck),
             _ => None,
         }
@@ -69,7 +76,7 @@ impl Preset {
 
     /// Returns all known preset names for help text.
     pub fn all_names() -> &'static [&'static str] {
-        &["generic", "obfuscator-io", "datadome", "jsfuck"]
+        &["generic", "obfuscator-io", "datadome", "debundler", "jsfuck"]
     }
 }
 
@@ -81,6 +88,11 @@ pub fn obfuscator_io_transformers() -> Vec<Box<dyn Transformer>> {
 /// Returns transformers targeting DataDome anti-bot scripts.
 pub fn datadome_transformers() -> Vec<Box<dyn Transformer>> {
     Preset::DataDome.transformers()
+}
+
+/// Returns transformers for debundling (Browserify, etc.).
+pub fn debundler_transformers() -> Vec<Box<dyn Transformer>> {
+    Preset::Debundler.transformers()
 }
 
 /// Returns transformers targeting JSFuck-encoded JavaScript.

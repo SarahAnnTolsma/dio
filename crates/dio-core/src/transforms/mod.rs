@@ -2,6 +2,7 @@
 
 pub mod constant;
 pub mod datadome;
+pub mod debundler;
 pub mod elimination;
 pub mod evaluation;
 pub mod inlining;
