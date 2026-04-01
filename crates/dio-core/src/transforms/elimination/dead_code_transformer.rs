@@ -48,13 +48,35 @@ impl Transformer for DeadCodeTransformer {
         let original_length = statements.len();
 
         // Find the first terminal statement and remove everything after it,
-        // EXCEPT function declarations which are hoisted in JavaScript.
+        // EXCEPT hoisted declarations:
+        // - `function` declarations: fully hoisted (name and body)
+        // - `var` declarations: name is hoisted (initialized as undefined),
+        //   but the initializer is dead code and can be stripped
+        // - `let`/`const`: NOT hoisted (temporal dead zone), safe to remove
         if let Some(terminal_index) = find_first_terminal(statements) {
             for index in (terminal_index + 1..statements.len()).rev() {
-                // Function declarations are hoisted — they must be kept even
-                // after return/throw/break/continue.
-                if matches!(&statements[index], Statement::FunctionDeclaration(_)) {
-                    continue;
+                match &statements[index] {
+                    Statement::FunctionDeclaration(_) => {
+                        // Fully hoisted — keep as-is.
+                        continue;
+                    }
+                    Statement::VariableDeclaration(declaration) => {
+                        if declaration.kind == oxc_ast::ast::VariableDeclarationKind::Var {
+                            // `var` is hoisted — keep the declaration but strip
+                            // initializers since they won't execute.
+                            let Statement::VariableDeclaration(declaration) =
+                                &mut statements[index]
+                            else {
+                                unreachable!();
+                            };
+                            for declarator in declaration.declarations.iter_mut() {
+                                declarator.init = None;
+                            }
+                            continue;
+                        }
+                        // let/const — not hoisted, remove.
+                    }
+                    _ => {}
                 }
                 operations::remove_statement_at(statements, index, context);
             }
