@@ -46,7 +46,7 @@ impl Deobfuscator {
     pub fn new() -> Self {
         Self {
             transformers: transforms::default_transformers(),
-            max_iterations: 100,
+            max_iterations: usize::MAX,
             diagnostics_callback: None,
             codegen_options: Self::default_codegen_options(),
         }
@@ -57,7 +57,7 @@ impl Deobfuscator {
     pub fn empty() -> Self {
         Self {
             transformers: Vec::new(),
-            max_iterations: 100,
+            max_iterations: usize::MAX,
             diagnostics_callback: None,
             codegen_options: Self::default_codegen_options(),
         }
@@ -97,7 +97,7 @@ impl Deobfuscator {
     pub fn with_preset(preset: crate::presets::Preset) -> Self {
         Self {
             transformers: preset.transformers(),
-            max_iterations: 100,
+            max_iterations: usize::MAX,
             diagnostics_callback: None,
             codegen_options: Self::default_codegen_options(),
         }

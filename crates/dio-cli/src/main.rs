@@ -21,12 +21,12 @@ struct Arguments {
     #[arg(short, long)]
     output: Option<String>,
 
-    /// Maximum number of transform iterations.
-    #[arg(long, default_value = "100")]
-    max_iterations: usize,
+    /// Maximum number of transform iterations (default: unlimited).
+    #[arg(long)]
+    max_iterations: Option<usize>,
 
     /// Transformer preset for a specific obfuscation tool.
-    /// Options: generic (default), obfuscator-io, jsfuck.
+    /// Options: generic (default), obfuscator-io, datadome, jsfuck.
     #[arg(long, default_value = "generic")]
     preset: String,
 
@@ -66,8 +66,10 @@ fn main() {
     });
 
     // Build deobfuscator.
-    let mut deobfuscator =
-        Deobfuscator::with_preset(preset).with_max_iterations(arguments.max_iterations);
+    let mut deobfuscator = Deobfuscator::with_preset(preset);
+    if let Some(max_iterations) = arguments.max_iterations {
+        deobfuscator = deobfuscator.with_max_iterations(max_iterations);
+    }
 
     if arguments.diagnostics {
         deobfuscator = deobfuscator.with_diagnostics_callback(|diagnostics| {
