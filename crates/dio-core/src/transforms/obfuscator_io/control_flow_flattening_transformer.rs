@@ -446,8 +446,9 @@ fn trace_states(
 
         let action = state_map.iter().find(|(s, _)| *s == current_state);
         let Some((_, action)) = action else {
-            // Unknown state — can't linearize.
-            return None;
+            // Unknown state — no case matches, so the switch falls through
+            // to `break` and the loop exits. Treat as Exit.
+            break;
         };
 
         match action {

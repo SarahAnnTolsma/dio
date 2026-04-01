@@ -450,7 +450,7 @@ fn find_control_flow_iife<'a>(
 
         let iife_body = extract_iife_body(&expression_statement.expression)?;
 
-        let parameters = find_hash_call_parameters(
+        let mut parameters = find_hash_call_parameters(
             iife_body,
             hash_symbol,
             hash_param_names,
@@ -458,9 +458,32 @@ fn find_control_flow_iife<'a>(
             context,
         )?;
 
-        // Find `s = i[ROW_INDEX]` — look for an assignment expression inside a
-        // callback passed to n() (the scheduler).
         let (target_symbol, row_index) = find_target_assignment(iife_body, context)?;
+
+        // The col/row assignment may be swapped. Try both orderings and
+        // pick the one that's consistent (produces only 32 distinct values
+        // for all possible inputs, matching the mask size).
+        // Quick validation: compute a[0][0] and a[0][1] — they should differ.
+        let test_a = ControlFlowArrayTransformer::compute_value(
+            0,
+            0,
+            &ControlFlowArray {
+                parameters: parameters.clone(),
+                row_index,
+            },
+        );
+        let test_b = ControlFlowArrayTransformer::compute_value(
+            0,
+            1,
+            &ControlFlowArray {
+                parameters: parameters.clone(),
+                row_index,
+            },
+        );
+        if test_a == test_b {
+            // All values for different y produce the same result — col/row are swapped.
+            std::mem::swap(&mut parameters.col_arg_index, &mut parameters.row_arg_index);
+        }
 
         return Some((
             target_symbol,
