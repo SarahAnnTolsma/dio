@@ -79,11 +79,18 @@ impl Transformer for InitializerInliningTransformer {
             let Some(body) = &function.body else {
                 continue;
             };
-            // Body must be non-empty and contain only assignment expression statements.
+            // Body must be non-empty and contain only simple assignment
+            // expression statements (identifier = expression, no calls).
             if body.statements.is_empty() {
                 continue;
             }
-            if !body.statements.iter().all(is_assignment_statement) {
+            if !body.statements.iter().all(is_simple_assignment_statement) {
+                continue;
+            }
+
+            // Must be called exactly once (to avoid duplicating code).
+            let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
+            if reference_ids.len() != 1 {
                 continue;
             }
 
@@ -174,13 +181,48 @@ impl Transformer for InitializerInliningTransformer {
     }
 }
 
-/// Check if a statement is an expression statement containing only an assignment.
-fn is_assignment_statement(statement: &Statement<'_>) -> bool {
+/// Check if a statement is a simple assignment of a literal to an identifier:
+/// `identifier = literal`. Rejects assignments with complex RHS expressions
+/// (arithmetic, function calls, variable references) to avoid cascading
+/// constant propagation into switch dispatch mechanisms.
+fn is_simple_assignment_statement(statement: &Statement<'_>) -> bool {
     let Statement::ExpressionStatement(expression_statement) = statement else {
         return false;
     };
-    matches!(
-        &expression_statement.expression,
-        Expression::AssignmentExpression(_)
-    )
+    let Expression::AssignmentExpression(assignment) = &expression_statement.expression else {
+        return false;
+    };
+    if assignment.operator != oxc_syntax::operator::AssignmentOperator::Assign {
+        return false;
+    }
+    if !matches!(
+        &assignment.left,
+        oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(_)
+    ) {
+        return false;
+    }
+    // RHS must be a simple literal (no variable references or complex expressions).
+    is_literal_value(&assignment.right)
+}
+
+/// Check if an expression is a simple literal value.
+fn is_literal_value(expression: &Expression<'_>) -> bool {
+    match expression {
+        Expression::NumericLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_) => true,
+        Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .all(|element| element.as_expression().is_some_and(is_literal_value)),
+        Expression::UnaryExpression(unary) => {
+            matches!(
+                unary.operator,
+                oxc_syntax::operator::UnaryOperator::UnaryNegation
+                    | oxc_syntax::operator::UnaryOperator::UnaryPlus
+            ) && is_literal_value(&unary.argument)
+        }
+        _ => false,
+    }
 }
