@@ -42,5 +42,5 @@ pub mod utils;
 pub use deobfuscator::{Deobfuscator, deobfuscate};
 pub use diagnostics::{TransformDiagnostics, TransformerStatistics};
 pub use presets::{Preset, jsfuck_transformers, obfuscator_io_transformers};
-pub use transforms::debundler::annotate_browserify_requires;
 pub use transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
+pub use transforms::debundler::annotate_browserify_requires;

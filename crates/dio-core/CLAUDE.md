@@ -118,11 +118,13 @@ Every new transformer must have integration tests. Tests are organized by transf
 - `bitwise_simplification.rs` — BitwiseSimplificationTransformer
 - `global_alias_simplification.rs` — GlobalAliasSimplificationTransformer
 - `simplification.rs` — BlockNormalization, Comma, TernaryToIf, LogicalToIf, SequenceStatement, Member (including assignment LHS), VariableDeclarationSplit
+- `declaration_merge.rs` — DeclarationMergeTransformer
 - `function_declaration.rs` — FunctionDeclarationTransformer
 - `proxy_function_inlining.rs` — ProxyFunctionInliningTransformer
-- `dead_code.rs` — DeadCodeTransformer (including side-effect-free statement removal)
+- `dead_code.rs` — DeadCodeTransformer (including side-effect-free statement removal, block unwrapping)
 - `string_array_decoder.rs` — StringArrayDecoderTransformer (Obfuscator.io preset)
 - `control_flow_array.rs` — ControlFlowArrayTransformer (Obfuscator.io preset)
+- `control_flow_flattening.rs` — ControlFlowFlatteningTransformer (Obfuscator.io preset)
 - `set_timeout_unwrap.rs` — SetTimeoutUnwrapTransformer (DataDome preset)
 - `combined.rs` — Multi-transformer interaction tests
 - `presets.rs` — Preset selection and configuration tests

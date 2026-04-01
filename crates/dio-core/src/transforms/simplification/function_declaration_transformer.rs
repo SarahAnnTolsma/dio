@@ -85,9 +85,9 @@ impl Transformer for FunctionDeclarationTransformer {
 
             // Must not be reassigned.
             let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
-            let has_writes = reference_ids.iter().any(|&reference_id| {
-                context.scoping().get_reference(reference_id).is_write()
-            });
+            let has_writes = reference_ids
+                .iter()
+                .any(|&reference_id| context.scoping().get_reference(reference_id).is_write());
             if has_writes {
                 continue;
             }
@@ -109,20 +109,18 @@ impl Transformer for FunctionDeclarationTransformer {
             let declarator = &mut declaration.declarations[0];
 
             // Take the function expression out of the initializer.
-            let initializer = std::mem::replace(
-                &mut declarator.init,
-                Some(context.ast.expression_null_literal(SPAN)),
-            );
+            let initializer = declarator
+                .init
+                .replace(context.ast.expression_null_literal(SPAN));
             let Some(Expression::FunctionExpression(mut function)) = initializer else {
                 continue;
             };
 
             // Create a binding identifier for the function name from the variable name.
             let name = context.ast.atom(&binding_name);
-            let function_binding =
-                context
-                    .ast
-                    .binding_identifier_with_symbol_id(SPAN, name, symbol_id);
+            let function_binding = context
+                .ast
+                .binding_identifier_with_symbol_id(SPAN, name, symbol_id);
 
             // Convert the function expression to a function declaration.
             function.r#type = FunctionType::FunctionDeclaration;

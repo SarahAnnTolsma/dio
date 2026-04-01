@@ -122,7 +122,7 @@ impl Transformer for ControlFlowTransformer {
         let alternate_empty = if_statement
             .alternate
             .as_ref()
-            .map_or(true, |alternate| is_empty_body(alternate));
+            .is_none_or(|alternate| is_empty_body(alternate));
 
         if consequent_empty && alternate_empty {
             // Replace `if (test) {} else {}` with `test;`
@@ -208,4 +208,3 @@ fn evaluate_as_boolean(expression: &Expression<'_>) -> Option<bool> {
         _ => None,
     }
 }
-

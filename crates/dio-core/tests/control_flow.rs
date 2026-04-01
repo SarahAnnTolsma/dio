@@ -100,25 +100,16 @@ fn empty_if_with_else_inverted() {
 
 #[test]
 fn empty_if_no_else_keeps_test() {
-    assert_eq!(
-        deobfuscate("if (f()) {}"),
-        "f();"
-    );
+    assert_eq!(deobfuscate("if (f()) {}"), "f();");
 }
 
 #[test]
 fn both_empty_keeps_test() {
-    assert_eq!(
-        deobfuscate("if (f()) {} else {}"),
-        "f();"
-    );
+    assert_eq!(deobfuscate("if (f()) {} else {}"), "f();");
 }
 
 #[test]
 fn empty_if_no_else_side_effect_free_test_removed() {
     // The test is side-effect-free, so the whole thing is removed.
-    assert_eq!(
-        deobfuscate("if (x) {} f();"),
-        "x;\nf();"
-    );
+    assert_eq!(deobfuscate("if (x) {} f();"), "x;\nf();");
 }

@@ -119,8 +119,16 @@ pub fn base64_encode(input: &[u8]) -> String {
 
     for chunk in input.chunks(3) {
         let b0 = u32::from(chunk[0]);
-        let b1 = if chunk.len() > 1 { u32::from(chunk[1]) } else { 0 };
-        let b2 = if chunk.len() > 2 { u32::from(chunk[2]) } else { 0 };
+        let b1 = if chunk.len() > 1 {
+            u32::from(chunk[1])
+        } else {
+            0
+        };
+        let b2 = if chunk.len() > 2 {
+            u32::from(chunk[2])
+        } else {
+            0
+        };
 
         let triple = (b0 << 16) | (b1 << 8) | b2;
 
@@ -194,14 +202,12 @@ fn rc4_decrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
 
     // Key-Scheduling Algorithm (KSA)
     let mut state = [0u8; 256];
-    for i in 0..256 {
-        state[i] = i as u8;
+    for (i, slot) in state.iter_mut().enumerate() {
+        *slot = i as u8;
     }
     let mut j: u8 = 0;
     for i in 0..256 {
-        j = j
-            .wrapping_add(state[i])
-            .wrapping_add(key[i % key.len()]);
+        j = j.wrapping_add(state[i]).wrapping_add(key[i % key.len()]);
         state.swap(i, j as usize);
     }
 

@@ -55,7 +55,8 @@ impl Transformer for SequenceStatementTransformer {
         let mut index = 0;
 
         while index < statements.len() {
-            if let Some(extracted) = try_extract_leading_expressions(&mut statements[index], context)
+            if let Some(extracted) =
+                try_extract_leading_expressions(&mut statements[index], context)
             {
                 let count = extracted.len();
                 // Insert extracted statements before the current statement.

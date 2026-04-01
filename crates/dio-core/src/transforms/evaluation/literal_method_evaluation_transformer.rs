@@ -58,11 +58,8 @@ impl Transformer for LiteralMethodEvaluationTransformer {
         context: &mut TraverseCtx<'a, ()>,
     ) -> bool {
         match expression {
-            Expression::CallExpression(_) => {
-                try_evaluate_string_method_call(expression, context)
-            }
-            Expression::StaticMemberExpression(_)
-            | Expression::ComputedMemberExpression(_) => {
+            Expression::CallExpression(_) => try_evaluate_string_method_call(expression, context),
+            Expression::StaticMemberExpression(_) | Expression::ComputedMemberExpression(_) => {
                 try_evaluate_literal_property_access(expression, context)
             }
             _ => false,
@@ -662,12 +659,13 @@ fn try_evaluate_static_member_access<'a>(
 
     // `[1,2,3].length` -> `3` (only when all elements are literals).
     if let Expression::ArrayExpression(array) = object
-        && all_elements_are_literals(&array.elements) {
-            let length = array.elements.len() as f64;
-            let replacement = make_numeric_literal(context, length);
-            operations::replace_expression(expression, replacement, context);
-            return true;
-        }
+        && all_elements_are_literals(&array.elements)
+    {
+        let length = array.elements.len() as f64;
+        let replacement = make_numeric_literal(context, length);
+        operations::replace_expression(expression, replacement, context);
+        return true;
+    }
 
     false
 }

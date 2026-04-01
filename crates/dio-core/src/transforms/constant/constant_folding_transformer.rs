@@ -54,9 +54,7 @@ impl Transformer for ConstantFoldingTransformer {
         match expression {
             Expression::BinaryExpression(_) => try_fold_binary_expression(expression, context),
             Expression::UnaryExpression(_) => try_fold_unary_expression(expression, context),
-            Expression::LogicalExpression(_) => {
-                try_fold_logical_expression(expression, context)
-            }
+            Expression::LogicalExpression(_) => try_fold_logical_expression(expression, context),
             _ => false,
         }
     }
@@ -156,13 +154,13 @@ fn try_fold_binary_expression<'a>(
     if binary.operator == BinaryOperator::Addition
         && let (Expression::StringLiteral(left), Expression::StringLiteral(right)) =
             (unwrap_parens(&binary.left), unwrap_parens(&binary.right))
-        {
-            let mut concatenated = left.value.to_string();
-            concatenated.push_str(&right.value);
-            let replacement = make_string_literal(context, &concatenated);
-            operations::replace_expression(expression, replacement, context);
-            return true;
-        }
+    {
+        let mut concatenated = left.value.to_string();
+        concatenated.push_str(&right.value);
+        let replacement = make_string_literal(context, &concatenated);
+        operations::replace_expression(expression, replacement, context);
+        return true;
+    }
 
     false
 }
@@ -226,9 +224,7 @@ fn try_fold_unary_expression<'a>(
             let result = match argument {
                 Expression::NumericLiteral(number) => Some(number.value),
                 // +true -> 1, +false -> 0
-                Expression::BooleanLiteral(boolean) => {
-                    Some(if boolean.value { 1.0 } else { 0.0 })
-                }
+                Expression::BooleanLiteral(boolean) => Some(if boolean.value { 1.0 } else { 0.0 }),
                 // +null -> 0
                 Expression::NullLiteral(_) => Some(0.0),
                 // +[] -> 0 (empty array coerces to "")
@@ -306,7 +302,9 @@ fn static_truthiness(expression: &Expression<'_>) -> Option<bool> {
     let expression = unwrap_parens(expression);
     match expression {
         Expression::BooleanLiteral(literal) => Some(literal.value),
-        Expression::NumericLiteral(literal) => Some(literal.value != 0.0 && !literal.value.is_nan()),
+        Expression::NumericLiteral(literal) => {
+            Some(literal.value != 0.0 && !literal.value.is_nan())
+        }
         Expression::StringLiteral(literal) => Some(!literal.value.is_empty()),
         Expression::NullLiteral(_) => Some(false),
         Expression::ArrayExpression(_) | Expression::ObjectExpression(_) => Some(true),
@@ -349,19 +347,15 @@ fn try_fold_logical_expression<'a>(
             // which we can't detect here.
             if let Some(false) = left_truthiness {
                 // `false && x` → `false` — short-circuit, x is never evaluated
-                let left = std::mem::replace(
-                    &mut logical.left,
-                    context.ast.expression_null_literal(SPAN),
-                );
+                let left =
+                    std::mem::replace(&mut logical.left, context.ast.expression_null_literal(SPAN));
                 operations::replace_expression(expression, left, context);
                 return true;
             }
             if let Some(true) = right_truthiness {
                 // `x && true` → `x`
-                let left = std::mem::replace(
-                    &mut logical.left,
-                    context.ast.expression_null_literal(SPAN),
-                );
+                let left =
+                    std::mem::replace(&mut logical.left, context.ast.expression_null_literal(SPAN));
                 operations::replace_expression(expression, left, context);
                 return true;
             }
@@ -382,19 +376,15 @@ fn try_fold_logical_expression<'a>(
             // which we can't detect here.
             if let Some(true) = left_truthiness {
                 // `true || x` → `true` — short-circuit, x is never evaluated
-                let left = std::mem::replace(
-                    &mut logical.left,
-                    context.ast.expression_null_literal(SPAN),
-                );
+                let left =
+                    std::mem::replace(&mut logical.left, context.ast.expression_null_literal(SPAN));
                 operations::replace_expression(expression, left, context);
                 return true;
             }
             if let Some(false) = right_truthiness {
                 // `x || false` → `x`
-                let left = std::mem::replace(
-                    &mut logical.left,
-                    context.ast.expression_null_literal(SPAN),
-                );
+                let left =
+                    std::mem::replace(&mut logical.left, context.ast.expression_null_literal(SPAN));
                 operations::replace_expression(expression, left, context);
                 return true;
             }

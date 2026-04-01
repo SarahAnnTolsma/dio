@@ -74,9 +74,7 @@ fn call_forwarding_proxy_single_argument() {
 #[test]
 fn call_forwarding_proxy_multiple_arguments() {
     assert_eq!(
-        deobfuscate(
-            "function _0x7(fn, a, b) { return fn(a, b); } f(_0x7(Math.max, 1, 2));"
-        ),
+        deobfuscate("function _0x7(fn, a, b) { return fn(a, b); } f(_0x7(Math.max, 1, 2));"),
         "f(2);"
     );
 }
@@ -96,9 +94,7 @@ fn call_forwarding_proxy_no_extra_arguments() {
 #[test]
 fn binary_proxy_multiple_call_sites() {
     assert_eq!(
-        deobfuscate(
-            "function _0x1(a, b) { return a + b; } f(_0x1(1, 2)); g(_0x1(3, 4));"
-        ),
+        deobfuscate("function _0x1(a, b) { return a + b; } f(_0x1(1, 2)); g(_0x1(3, 4));"),
         "f(3);\ng(7);"
     );
 }
@@ -162,9 +158,7 @@ fn identity_returns_first_param_with_extra() {
 #[test]
 fn skip_function_with_multiple_statements() {
     assert_eq!(
-        deobfuscate(
-            "function f(a, b) { console.log(a); return a + b; } var x = f(1, 2);"
-        ),
+        deobfuscate("function f(a, b) { console.log(a); return a + b; } var x = f(1, 2);"),
         "function f(a, b) {\n    console.log(a);\n    return a + b;\n}\nvar x = f(1, 2);"
     );
 }

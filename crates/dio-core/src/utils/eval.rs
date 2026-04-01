@@ -78,9 +78,7 @@ pub fn try_eval(expression: &Expression<'_>) -> Option<JsValue> {
     match expression {
         // Literals
         Expression::NumericLiteral(literal) => Some(JsValue::Number(literal.value)),
-        Expression::StringLiteral(literal) => {
-            Some(JsValue::String(literal.value.to_string()))
-        }
+        Expression::StringLiteral(literal) => Some(JsValue::String(literal.value.to_string())),
         Expression::BooleanLiteral(literal) => Some(JsValue::Boolean(literal.value)),
         Expression::NullLiteral(_) => Some(JsValue::Null),
 
@@ -153,14 +151,14 @@ pub fn js_parse_int(string: &str, radix: Option<u32>) -> Option<f64> {
     };
 
     // Handle 0x prefix for radix 16.
-    if radix == 16 {
-        if let Some(&'0') = chars.peek() {
-            let mut lookahead = chars.clone();
-            lookahead.next();
-            if matches!(lookahead.peek(), Some('x') | Some('X')) {
-                chars.next();
-                chars.next();
-            }
+    if radix == 16
+        && let Some(&'0') = chars.peek()
+    {
+        let mut lookahead = chars.clone();
+        lookahead.next();
+        if matches!(lookahead.peek(), Some('x') | Some('X')) {
+            chars.next();
+            chars.next();
         }
     }
 
@@ -183,7 +181,11 @@ pub fn js_parse_int(string: &str, radix: Option<u32>) -> Option<f64> {
         return None;
     }
 
-    Some(if negative { -(value as f64) } else { value as f64 })
+    Some(if negative {
+        -(value as f64)
+    } else {
+        value as f64
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -257,10 +259,10 @@ fn eval_binary(
     let right_value = try_eval(right)?;
 
     // String concatenation.
-    if operator == BinaryOperator::Addition {
-        if let (JsValue::String(l), JsValue::String(r)) = (&left_value, &right_value) {
-            return Some(JsValue::String(format!("{l}{r}")));
-        }
+    if operator == BinaryOperator::Addition
+        && let (JsValue::String(l), JsValue::String(r)) = (&left_value, &right_value)
+    {
+        return Some(JsValue::String(format!("{l}{r}")));
     }
 
     // Numeric operations.
@@ -298,36 +300,24 @@ fn eval_binary(
         BinaryOperator::Inequality => Some(JsValue::Boolean(left_number != right_number)),
 
         // Bitwise (JavaScript uses i32 semantics)
-        BinaryOperator::BitwiseOR => {
-            Some(JsValue::Number(f64::from(
-                (left_number as i32) | (right_number as i32),
-            )))
-        }
-        BinaryOperator::BitwiseAnd => {
-            Some(JsValue::Number(f64::from(
-                (left_number as i32) & (right_number as i32),
-            )))
-        }
-        BinaryOperator::BitwiseXOR => {
-            Some(JsValue::Number(f64::from(
-                (left_number as i32) ^ (right_number as i32),
-            )))
-        }
-        BinaryOperator::ShiftLeft => {
-            Some(JsValue::Number(f64::from(
-                (left_number as i32) << ((right_number as u32) & 0x1F),
-            )))
-        }
-        BinaryOperator::ShiftRight => {
-            Some(JsValue::Number(f64::from(
-                (left_number as i32) >> ((right_number as u32) & 0x1F),
-            )))
-        }
-        BinaryOperator::ShiftRightZeroFill => {
-            Some(JsValue::Number(f64::from(
-                ((left_number as u32) >> ((right_number as u32) & 0x1F)) as i32,
-            )))
-        }
+        BinaryOperator::BitwiseOR => Some(JsValue::Number(f64::from(
+            (left_number as i32) | (right_number as i32),
+        ))),
+        BinaryOperator::BitwiseAnd => Some(JsValue::Number(f64::from(
+            (left_number as i32) & (right_number as i32),
+        ))),
+        BinaryOperator::BitwiseXOR => Some(JsValue::Number(f64::from(
+            (left_number as i32) ^ (right_number as i32),
+        ))),
+        BinaryOperator::ShiftLeft => Some(JsValue::Number(f64::from(
+            (left_number as i32) << ((right_number as u32) & 0x1F),
+        ))),
+        BinaryOperator::ShiftRight => Some(JsValue::Number(f64::from(
+            (left_number as i32) >> ((right_number as u32) & 0x1F),
+        ))),
+        BinaryOperator::ShiftRightZeroFill => Some(JsValue::Number(f64::from(
+            ((left_number as u32) >> ((right_number as u32) & 0x1F)) as i32,
+        ))),
 
         _ => None,
     }
@@ -575,7 +565,10 @@ mod tests {
     #[test]
     fn eval_parse_int() {
         assert_eq!(eval_js("parseInt(\"42\")"), Some(JsValue::Number(42.0)));
-        assert_eq!(eval_js("parseInt(\"ff\", 16)"), Some(JsValue::Number(255.0)));
+        assert_eq!(
+            eval_js("parseInt(\"ff\", 16)"),
+            Some(JsValue::Number(255.0))
+        );
         assert_eq!(
             eval_js("parseInt(\"7901370KGklmM\")"),
             Some(JsValue::Number(7901370.0))
@@ -592,7 +585,10 @@ mod tests {
     #[test]
     fn eval_nested() {
         assert_eq!(eval_js("(2 + 3) * (10 - 4)"), Some(JsValue::Number(30.0)));
-        assert_eq!(eval_js("-parseInt(\"100\") / 1 + parseInt(\"200\") / 2"), Some(JsValue::Number(0.0)));
+        assert_eq!(
+            eval_js("-parseInt(\"100\") / 1 + parseInt(\"200\") / 2"),
+            Some(JsValue::Number(0.0))
+        );
     }
 
     #[test]

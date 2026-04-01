@@ -37,8 +37,8 @@ use oxc_traverse::TraverseCtx;
 
 use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
-use crate::utils::unwrap_parens;
 use crate::utils;
+use crate::utils::unwrap_parens;
 
 /// A pre-decoded value from the string array.
 #[derive(Debug, Clone)]
@@ -112,11 +112,11 @@ impl StringArrayDecoderTransformer {
                 }
                 oxc_ast::ast::ArrayExpressionElement::UnaryExpression(unary) => {
                     // Handle negative numbers: `-130.34`
-                    if unary.operator == oxc_syntax::operator::UnaryOperator::UnaryNegation {
-                        if let Expression::NumericLiteral(literal) = &unary.argument {
-                            elements.push(RawArrayElement::Number(-literal.value));
-                            continue;
-                        }
+                    if unary.operator == oxc_syntax::operator::UnaryOperator::UnaryNegation
+                        && let Expression::NumericLiteral(literal) = &unary.argument
+                    {
+                        elements.push(RawArrayElement::Number(-literal.value));
+                        continue;
                     }
                     // Any other unary expression (e.g., `!0`, `!1`) is non-literal.
                     // Let constant folding simplify it first; we'll pick it up on
@@ -187,8 +187,7 @@ impl StringArrayDecoderTransformer {
         // without indexing it.
         if !results
             .computed_member_on_symbols
-            .iter()
-            .any(|&s| s == array_symbol_id)
+            .contains(&array_symbol_id)
         {
             return None;
         }
@@ -201,25 +200,22 @@ impl StringArrayDecoderTransformer {
 
         // For custom base64: require BOTH a 64/65-char alphabet string AND
         // indexOf calls (the decoder uses indexOf to look up character positions).
-        if let Some(alphabet) = &results.custom_base64_alphabet {
-            if results.has_index_of_call {
-                return Some((
-                    array_symbol_id,
-                    DecodeStrategy::CustomBase64 {
-                        alphabet: alphabet.as_bytes().to_vec(),
-                    },
-                ));
-            }
+        if let Some(alphabet) = &results.custom_base64_alphabet
+            && results.has_index_of_call
+        {
+            return Some((
+                array_symbol_id,
+                DecodeStrategy::CustomBase64 {
+                    alphabet: alphabet.as_bytes().to_vec(),
+                },
+            ));
         }
 
         None
     }
 
     /// Pre-compute all decoded values from the raw array elements.
-    fn decode_array(
-        elements: &[RawArrayElement],
-        strategy: &DecodeStrategy,
-    ) -> Vec<DecodedValue> {
+    fn decode_array(elements: &[RawArrayElement], strategy: &DecodeStrategy) -> Vec<DecodedValue> {
         elements
             .iter()
             .map(|element| match element {
@@ -276,9 +272,7 @@ impl StringArrayDecoderTransformer {
                     )
                 }
             }
-            DecodedValue::Boolean(value) => {
-                context.ast.expression_boolean_literal(SPAN, *value)
-            }
+            DecodedValue::Boolean(value) => context.ast.expression_boolean_literal(SPAN, *value),
             DecodedValue::Null => context.ast.expression_null_literal(SPAN),
         }
     }
@@ -341,12 +335,10 @@ impl<'a> FunctionBodyAnalyzer<'a> {
         }
 
         let mut computed_member_on_symbols = Vec::new();
-        for reference_id in &self.computed_member_object_references {
-            if let Some(ref_id) = reference_id {
-                let reference = context.scoping().get_reference(*ref_id);
-                if let Some(symbol_id) = reference.symbol_id() {
-                    computed_member_on_symbols.push(symbol_id);
-                }
+        for ref_id in self.computed_member_object_references.iter().flatten() {
+            let reference = context.scoping().get_reference(*ref_id);
+            if let Some(symbol_id) = reference.symbol_id() {
+                computed_member_on_symbols.push(symbol_id);
             }
         }
 
@@ -496,15 +488,11 @@ impl Transformer for StringArrayDecoderTransformer {
 
             if let Some((array_symbol_id, strategy)) =
                 Self::classify_decoder(function, &candidate_arrays, context)
+                && let Some(elements) = candidate_arrays.get(&array_symbol_id)
             {
-                if let Some(elements) = candidate_arrays.get(&array_symbol_id) {
-                    let decoded_values = Self::decode_array(elements, &strategy);
-                    decoders.insert(
-                        decoder_symbol_id,
-                        DecoderInfo { decoded_values },
-                    );
-                    found_pairs.push((decoder_symbol_id, array_symbol_id));
-                }
+                let decoded_values = Self::decode_array(elements, &strategy);
+                decoders.insert(decoder_symbol_id, DecoderInfo { decoded_values });
+                found_pairs.push((decoder_symbol_id, array_symbol_id));
             }
         }
 
@@ -520,23 +508,21 @@ impl Transformer for StringArrayDecoderTransformer {
         for index in (0..statements.len()).rev() {
             match &statements[index] {
                 Statement::FunctionDeclaration(function) => {
-                    if let Some(binding) = &function.id {
-                        if let Some(symbol_id) = binding.symbol_id.get() {
-                            if decoder_symbols.contains(&symbol_id) {
-                                operations::remove_statement_at(statements, index, context);
-                                changed = true;
-                            }
-                        }
+                    if let Some(binding) = &function.id
+                        && let Some(symbol_id) = binding.symbol_id.get()
+                        && decoder_symbols.contains(&symbol_id)
+                    {
+                        operations::remove_statement_at(statements, index, context);
+                        changed = true;
                     }
                 }
                 Statement::VariableDeclaration(declaration) => {
                     let all_arrays = declaration.declarations.iter().all(|declarator| {
                         if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
                             &declarator.id
+                            && let Some(symbol_id) = binding.symbol_id.get()
                         {
-                            if let Some(symbol_id) = binding.symbol_id.get() {
-                                return array_symbols.contains(&symbol_id);
-                            }
+                            return array_symbols.contains(&symbol_id);
                         }
                         false
                     });
@@ -624,4 +610,3 @@ fn extract_numeric_index(expression: &Expression<'_>) -> Option<usize> {
         _ => None,
     }
 }
-

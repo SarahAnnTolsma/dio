@@ -149,11 +149,11 @@ impl Transformer for ControlFlowArrayTransformer {
             if !is_hash_function(function) {
                 continue;
             }
-            if let Some(binding) = &function.id {
-                if let Some(symbol_id) = binding.symbol_id.get() {
-                    hash_function_symbol = Some(symbol_id);
-                    break;
-                }
+            if let Some(binding) = &function.id
+                && let Some(symbol_id) = binding.symbol_id.get()
+            {
+                hash_function_symbol = Some(symbol_id);
+                break;
             }
         }
 
@@ -177,15 +177,13 @@ impl Transformer for ControlFlowArrayTransformer {
         // Remove the hash function declaration.
         let mut changed = false;
         for index in (0..statements.len()).rev() {
-            if let Statement::FunctionDeclaration(function) = &statements[index] {
-                if let Some(binding) = &function.id {
-                    if let Some(symbol_id) = binding.symbol_id.get() {
-                        if symbol_id == hash_symbol {
-                            operations::remove_statement_at(statements, index, context);
-                            changed = true;
-                        }
-                    }
-                }
+            if let Statement::FunctionDeclaration(function) = &statements[index]
+                && let Some(binding) = &function.id
+                && let Some(symbol_id) = binding.symbol_id.get()
+                && symbol_id == hash_symbol
+            {
+                operations::remove_statement_at(statements, index, context);
+                changed = true;
             }
         }
 
@@ -210,13 +208,12 @@ impl Transformer for ControlFlowArrayTransformer {
             if declarator.init.is_some() {
                 continue;
             }
-            if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id {
-                if let Some(symbol_id) = binding.symbol_id.get() {
-                    if tracked_symbols.contains(&symbol_id) {
-                        operations::remove_statement_at(statements, index, context);
-                        changed = true;
-                    }
-                }
+            if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
+                && let Some(symbol_id) = binding.symbol_id.get()
+                && tracked_symbols.contains(&symbol_id)
+            {
+                operations::remove_statement_at(statements, index, context);
+                changed = true;
             }
         }
 
@@ -300,7 +297,7 @@ fn extract_array_index(expression: &Expression<'_>) -> Option<u32> {
     match expression {
         Expression::NumericLiteral(number) => {
             let value = number.value;
-            if value >= 0.0 && value < 256.0 && value.fract() == 0.0 {
+            if (0.0..256.0).contains(&value) && value.fract() == 0.0 {
                 Some(value as u32)
             } else {
                 None
@@ -381,9 +378,7 @@ fn has_xor_multiply_pattern(expression: &Expression<'_>) -> bool {
             }
             has_xor_multiply_pattern(&binary.left) || has_xor_multiply_pattern(&binary.right)
         }
-        Expression::ParenthesizedExpression(paren) => {
-            has_xor_multiply_pattern(&paren.expression)
-        }
+        Expression::ParenthesizedExpression(paren) => has_xor_multiply_pattern(&paren.expression),
         _ => false,
     }
 }
@@ -413,8 +408,7 @@ fn find_control_flow_iife<'a>(
 
         // Find `s = i[ROW_INDEX]` — look for an assignment expression inside a
         // callback passed to n() (the scheduler).
-        let (target_symbol, row_index) =
-            find_target_assignment(iife_body, context)?;
+        let (target_symbol, row_index) = find_target_assignment(iife_body, context)?;
 
         return Some((
             target_symbol,
@@ -433,14 +427,12 @@ fn find_control_flow_iife<'a>(
 /// - `(function(...) { BODY })(args)`
 fn extract_iife_body<'a>(expression: &'a Expression<'a>) -> Option<&'a [Statement<'a>]> {
     // !function(...) { ... }(args)
-    if let Expression::UnaryExpression(unary) = expression {
-        if let Expression::CallExpression(call) = &unary.argument {
-            if let Expression::FunctionExpression(function) = &call.callee {
-                if let Some(body) = &function.body {
-                    return Some(&body.statements);
-                }
-            }
-        }
+    if let Expression::UnaryExpression(unary) = expression
+        && let Expression::CallExpression(call) = &unary.argument
+        && let Expression::FunctionExpression(function) = &call.callee
+        && let Some(body) = &function.body
+    {
+        return Some(&body.statements);
     }
 
     // (function(...) { ... })(args)
@@ -449,10 +441,10 @@ fn extract_iife_body<'a>(expression: &'a Expression<'a>) -> Option<&'a [Statemen
             Expression::ParenthesizedExpression(paren) => &paren.expression,
             other => other,
         };
-        if let Expression::FunctionExpression(function) = callee {
-            if let Some(body) = &function.body {
-                return Some(&body.statements);
-            }
+        if let Expression::FunctionExpression(function) = callee
+            && let Some(body) = &function.body
+        {
+            return Some(&body.statements);
         }
     }
 
@@ -469,14 +461,12 @@ fn find_hash_call_parameters(
 ) -> Option<HashParameters> {
     for statement in statements {
         // Look in function declarations inside the IIFE.
-        if let Statement::FunctionDeclaration(function) = statement {
-            if let Some(body) = &function.body {
-                if let Some(params) =
-                    find_hash_call_in_statements(&body.statements, hash_symbol, context)
-                {
-                    return Some(params);
-                }
-            }
+        if let Statement::FunctionDeclaration(function) = statement
+            && let Some(body) = &function.body
+            && let Some(params) =
+                find_hash_call_in_statements(&body.statements, hash_symbol, context)
+        {
+            return Some(params);
         }
     }
     None
@@ -491,18 +481,19 @@ fn find_hash_call_in_statements(
     for statement in statements {
         match statement {
             Statement::ForStatement(for_statement) => {
-                if let Statement::BlockStatement(body) = &for_statement.body {
-                    if let Some(params) =
+                if let Statement::BlockStatement(body) = &for_statement.body
+                    && let Some(params) =
                         find_hash_call_in_statements(&body.body, hash_symbol, context)
-                    {
-                        return Some(params);
-                    }
+                {
+                    return Some(params);
                 }
             }
             Statement::ExpressionStatement(expression_statement) => {
-                if let Some(params) =
-                    find_hash_call_in_expression(&expression_statement.expression, hash_symbol, context)
-                {
+                if let Some(params) = find_hash_call_in_expression(
+                    &expression_statement.expression,
+                    hash_symbol,
+                    context,
+                ) {
                     return Some(params);
                 }
             }
@@ -533,13 +524,9 @@ fn find_hash_call_in_expression(
             let Expression::Identifier(callee) = &call.callee else {
                 return None;
             };
-            let Some(reference_id) = callee.reference_id.get() else {
-                return None;
-            };
+            let reference_id = callee.reference_id.get()?;
             let reference = context.scoping().get_reference(reference_id);
-            let Some(callee_symbol) = reference.symbol_id() else {
-                return None;
-            };
+            let callee_symbol = reference.symbol_id()?;
             if callee_symbol != hash_symbol {
                 return None;
             }
@@ -561,13 +548,7 @@ fn find_hash_call_in_expression(
                 return None;
             }
 
-            Some(HashParameters {
-                c1,
-                c2,
-                c3,
-                c4,
-                c5,
-            })
+            Some(HashParameters { c1, c2, c3, c4, c5 })
         }
         _ => None,
     }

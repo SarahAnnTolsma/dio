@@ -37,10 +37,7 @@ fn window_alias_multiple_references() {
 
 #[test]
 fn self_alias() {
-    assert_eq!(
-        deobfuscate("var s = self; f(s.Number(\"5\"));"),
-        "f(5);"
-    );
+    assert_eq!(deobfuscate("var s = self; f(s.Number(\"5\"));"), "f(5);");
 }
 
 #[test]

@@ -101,9 +101,9 @@ impl Transformer for GlobalAliasSimplificationTransformer {
 
                 // Must not be reassigned.
                 let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
-                let has_writes = reference_ids.iter().any(|&reference_id| {
-                    context.scoping().get_reference(reference_id).is_write()
-                });
+                let has_writes = reference_ids
+                    .iter()
+                    .any(|&reference_id| context.scoping().get_reference(reference_id).is_write());
                 if has_writes {
                     continue;
                 }

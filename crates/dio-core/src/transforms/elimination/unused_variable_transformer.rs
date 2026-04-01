@@ -102,11 +102,14 @@ impl Transformer for UnusedVariableTransformer {
                             new_declarations.push(declarator);
                         }
 
-                        statements[index] = Statement::VariableDeclaration(context.ast.alloc(
-                            context
-                                .ast
-                                .variable_declaration(SPAN, kind, new_declarations, false),
-                        ));
+                        statements[index] = Statement::VariableDeclaration(
+                            context.ast.alloc(context.ast.variable_declaration(
+                                SPAN,
+                                kind,
+                                new_declarations,
+                                false,
+                            )),
+                        );
                         changed = true;
                     }
                 }
@@ -189,20 +192,16 @@ fn is_side_effect_free(expression: &oxc_ast::ast::Expression<'_>) -> bool {
         | Expression::BooleanLiteral(_)
         | Expression::NullLiteral(_) => true,
 
-        Expression::ArrayExpression(array) => {
-            array.elements.iter().all(|element| {
-                match element {
-                    oxc_ast::ast::ArrayExpressionElement::SpreadElement(_) => false,
-                    _ => {
-                        if let Some(expr) = element.as_expression() {
-                            is_side_effect_free(expr)
-                        } else {
-                            false
-                        }
-                    }
+        Expression::ArrayExpression(array) => array.elements.iter().all(|element| match element {
+            oxc_ast::ast::ArrayExpressionElement::SpreadElement(_) => false,
+            _ => {
+                if let Some(expr) = element.as_expression() {
+                    is_side_effect_free(expr)
+                } else {
+                    false
                 }
-            })
-        }
+            }
+        }),
 
         Expression::UnaryExpression(unary) => is_side_effect_free(&unary.argument),
 

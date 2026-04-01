@@ -59,7 +59,6 @@ impl Transformer for ControlFlowFlatteningTransformer {
                 continue;
             };
 
-
             // Condition must be `true`.
             let Some(test) = &for_statement.test else {
                 continue;
@@ -85,7 +84,6 @@ impl Transformer for ControlFlowFlatteningTransformer {
                 continue;
             };
 
-
             // Switch discriminant must be a simple identifier (the state variable).
             let Expression::Identifier(state_identifier) = &switch.discriminant else {
                 continue;
@@ -93,18 +91,15 @@ impl Transformer for ControlFlowFlatteningTransformer {
             let state_name = state_identifier.name.to_string();
 
             // The for-init must declare or assign the state variable to a numeric literal.
-            let Some(initial_state) =
-                extract_initial_state(&for_statement.init, &state_name)
+            let Some(initial_state) = extract_initial_state(&for_statement.init, &state_name)
             else {
                 continue;
             };
-
 
             // Parse all switch cases into a state map.
             let Some(state_map) = parse_state_map(switch, &state_name) else {
                 continue;
             };
-
 
             // Trace through the state machine starting from initial_state.
             let Some(linearized) = trace_states(initial_state, &state_map) else {
@@ -129,12 +124,10 @@ impl Transformer for ControlFlowFlatteningTransformer {
                 // Remove the initializer from the state variable so it becomes
                 // `var state;` instead of `var state = N;`.
                 for declarator in init_decl.declarations.iter_mut() {
-                    if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
-                        &declarator.id
+                    if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
+                        && binding.name.as_str() == state_name
                     {
-                        if binding.name.as_str() == state_name {
-                            declarator.init = None;
-                        }
+                        declarator.init = None;
                     }
                 }
 
@@ -171,10 +164,10 @@ impl Transformer for ControlFlowFlatteningTransformer {
                         // If the statement is a block that ends with a state
                         // assignment, strip the assignment and unwrap the block.
                         if let Statement::BlockStatement(block) = &mut stmt {
-                            if let Some(last) = block.body.last() {
-                                if extract_state_assignment(last, &state_name).is_some() {
-                                    block.body.pop();
-                                }
+                            if let Some(last) = block.body.last()
+                                && extract_state_assignment(last, &state_name).is_some()
+                            {
+                                block.body.pop();
                             }
                             // Unwrap single-statement blocks.
                             if block.body.len() == 1 {
@@ -326,13 +319,12 @@ fn parse_state_map(
         };
 
         // Check if this is a break case (exit).
-        if case.consequent.len() == 1
-            && matches!(&case.consequent[0], Statement::BreakStatement(_))
+        if case.consequent.len() == 1 && matches!(&case.consequent[0], Statement::BreakStatement(_))
         {
-            if let Some(alias) = alias_label {
-                if !state_map.iter().any(|(s, _)| *s == alias) {
-                    state_map.push((alias, StateAction::Exit));
-                }
+            if let Some(alias) = alias_label
+                && !state_map.iter().any(|(s, _)| *s == alias)
+            {
+                state_map.push((alias, StateAction::Exit));
             }
             state_map.push((state_value, StateAction::Exit));
             continue;
@@ -357,20 +349,17 @@ fn parse_state_map(
             // Check inside block statements for state assignments.
             // Pattern: `{ code; state = N; }` — extract the state assignment
             // and keep the block (its contents will be unwrapped later).
-            if let Statement::BlockStatement(block) = stmt {
-                if let Some(last) = block.body.last() {
-                    if let Some(assigned_state) =
-                        extract_state_assignment(last, state_name)
-                    {
-                        next_state = Some(assigned_state);
-                        // Only keep the block if it has other statements besides
-                        // the state assignment.
-                        if block.body.len() > 1 {
-                            statement_indices.push(stmt_index);
-                        }
-                        continue;
-                    }
+            if let Statement::BlockStatement(block) = stmt
+                && let Some(last) = block.body.last()
+                && let Some(assigned_state) = extract_state_assignment(last, state_name)
+            {
+                next_state = Some(assigned_state);
+                // Only keep the block if it has other statements besides
+                // the state assignment.
+                if block.body.len() > 1 {
+                    statement_indices.push(stmt_index);
                 }
+                continue;
             }
 
             if matches!(stmt, Statement::BreakStatement(_)) {
@@ -415,20 +404,20 @@ fn parse_state_map(
 
         if let Some(action) = action {
             // Register the alias label so state transitions to either value work.
-            if let Some(alias) = alias_label {
-                if !state_map.iter().any(|(s, _)| *s == alias) {
-                    state_map.push((alias, action.clone()));
-                }
+            if let Some(alias) = alias_label
+                && !state_map.iter().any(|(s, _)| *s == alias)
+            {
+                state_map.push((alias, action.clone()));
             }
             state_map.push((state_value, action));
         }
     }
 
     // If the last case was an empty fall-through, register it as an exit.
-    if let Some(label) = pending_fallthrough_label {
-        if !state_map.iter().any(|(s, _)| *s == label) {
-            state_map.push((label, StateAction::Exit));
-        }
+    if let Some(label) = pending_fallthrough_label
+        && !state_map.iter().any(|(s, _)| *s == label)
+    {
+        state_map.push((label, StateAction::Exit));
     }
 
     if state_map.is_empty() {
@@ -507,12 +496,11 @@ fn extract_initial_state(
         oxc_ast::ast::ForStatementInit::VariableDeclaration(declaration) => {
             // Look for the state variable among the declarators.
             for declarator in &declaration.declarations {
-                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id {
-                    if binding.name.as_str() == state_name {
-                        if let Some(init_expr) = &declarator.init {
-                            return extract_numeric_value(init_expr);
-                        }
-                    }
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
+                    && binding.name.as_str() == state_name
+                    && let Some(init_expr) = &declarator.init
+                {
+                    return extract_numeric_value(init_expr);
                 }
             }
             None
@@ -569,18 +557,18 @@ fn contains_return(statement: &Statement<'_>) -> bool {
                 || if_stmt
                     .alternate
                     .as_ref()
-                    .map_or(false, |alt| contains_return(alt))
+                    .is_some_and(|alt| contains_return(alt))
         }
         Statement::TryStatement(try_stmt) => {
             try_stmt.block.body.iter().any(contains_return)
                 || try_stmt
                     .handler
                     .as_ref()
-                    .map_or(false, |h| h.body.body.iter().any(contains_return))
+                    .is_some_and(|h| h.body.body.iter().any(contains_return))
                 || try_stmt
                     .finalizer
                     .as_ref()
-                    .map_or(false, |f| f.body.iter().any(contains_return))
+                    .is_some_and(|f| f.body.iter().any(contains_return))
         }
         _ => false,
     }

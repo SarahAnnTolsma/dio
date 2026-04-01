@@ -22,12 +22,18 @@ fn parse_int() {
 
 #[test]
 fn parse_int_hex() {
-    assert_eq!(deobfuscate("var x = parseInt(\"ff\", 16); f(x);"), "f(255);");
+    assert_eq!(
+        deobfuscate("var x = parseInt(\"ff\", 16); f(x);"),
+        "f(255);"
+    );
 }
 
 #[test]
 fn parse_float() {
-    assert_eq!(deobfuscate("var x = parseFloat(\"3.14\"); f(x);"), "f(3.14);");
+    assert_eq!(
+        deobfuscate("var x = parseFloat(\"3.14\"); f(x);"),
+        "f(3.14);"
+    );
 }
 
 #[test]

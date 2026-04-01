@@ -186,20 +186,18 @@ impl Transformer for StringArrayRC4DecoderTransformer {
         // Step 3: Find rotation IIFE and solve the rotation.
         let mut rotated_array = raw_array;
         for statement in statements.iter() {
-            if let Some(target) =
-                extract_rotation_iife(statement, array_func_symbol, context)
-            {
-                if let Some(solved) = solve_rotation_rc4(
+            if let Some(target) = extract_rotation_iife(statement, array_func_symbol, context)
+                && let Some(solved) = solve_rotation_rc4(
                     &rotated_array,
                     base_offset,
                     target,
                     statement,
                     decoder_symbol,
                     context,
-                ) {
-                    rotated_array = solved;
-                    break;
-                }
+                )
+            {
+                rotated_array = solved;
+                break;
             }
         }
 
@@ -217,13 +215,12 @@ impl Transformer for StringArrayRC4DecoderTransformer {
         for index in (0..statements.len()).rev() {
             match &statements[index] {
                 Statement::FunctionDeclaration(function) => {
-                    if let Some(binding) = &function.id {
-                        if let Some(sym) = binding.symbol_id.get() {
-                            if sym == array_func_symbol || sym == decoder_symbol {
-                                operations::remove_statement_at(statements, index, context);
-                                changed = true;
-                            }
-                        }
+                    if let Some(binding) = &function.id
+                        && let Some(sym) = binding.symbol_id.get()
+                        && (sym == array_func_symbol || sym == decoder_symbol)
+                    {
+                        operations::remove_statement_at(statements, index, context);
+                        changed = true;
                     }
                 }
                 Statement::ExpressionStatement(_) => {
@@ -285,20 +282,21 @@ impl Transformer for StringArrayRC4DecoderTransformer {
                 };
                 (info, index as i64, key)
             }
-            DecoderEntry::Wrapper { mapping, decoder_info } => {
+            DecoderEntry::Wrapper {
+                mapping,
+                decoder_info,
+            } => {
                 // Wrapper call: _0x5d34f5(a, b, c, d, "key")
                 if call.arguments.len() <= mapping.index_parameter
                     || call.arguments.len() <= mapping.key_parameter
                 {
                     return false;
                 }
-                let Some(raw_index) =
-                    extract_numeric_arg(&call.arguments[mapping.index_parameter])
+                let Some(raw_index) = extract_numeric_arg(&call.arguments[mapping.index_parameter])
                 else {
                     return false;
                 };
-                let Some(key) = extract_string_arg(&call.arguments[mapping.key_parameter])
-                else {
+                let Some(key) = extract_string_arg(&call.arguments[mapping.key_parameter]) else {
                     return false;
                 };
                 let effective = raw_index as i64 + mapping.index_offset;
@@ -352,14 +350,15 @@ impl StringArrayRC4DecoderTransformer {
                 continue;
             }
 
-            if let Some((target_symbol, mapping)) =
-                classify_wrapper_function(function, context)
-            {
+            if let Some((target_symbol, mapping)) = classify_wrapper_function(function, context) {
                 // Check if the target is a known decoder or wrapper.
                 if let Some(entry) = decoders.get(&target_symbol) {
                     let decoder_info = match entry {
                         DecoderEntry::Decoder(info) => info.clone(),
-                        DecoderEntry::Wrapper { decoder_info, mapping: parent_mapping } => {
+                        DecoderEntry::Wrapper {
+                            decoder_info,
+                            mapping: parent_mapping,
+                        } => {
                             // Compose mappings — for now, only handle direct wrappers.
                             // Chained wrappers would need parameter index remapping.
                             let _ = parent_mapping;
@@ -461,7 +460,9 @@ fn classify_rc4_decoder(
 
     // Must reference one of the array functions.
     let array_func_idx = array_functions.iter().position(|&(sym, _)| {
-        analyzer.called_symbols.contains(&context.scoping().symbol_name(sym).to_string())
+        analyzer
+            .called_symbols
+            .contains(&context.scoping().symbol_name(sym).to_string())
     })?;
 
     // Must contain the standard base64 alphabet (indicator of base64+RC4 pattern).
@@ -504,9 +505,7 @@ fn classify_wrapper_function(
     let Expression::Identifier(callee) = &call.callee else {
         return None;
     };
-    let Some(ref_id) = callee.reference_id.get() else {
-        return None;
-    };
+    let ref_id = callee.reference_id.get()?;
     let reference = context.scoping().get_reference(ref_id);
     let target_symbol = reference.symbol_id()?;
 
@@ -573,12 +572,11 @@ fn extract_parameter_with_offset(
                 if let Expression::NumericLiteral(lit) = &binary.right {
                     return Some((idx, -(lit.value as i64)));
                 }
-                if let Expression::UnaryExpression(unary) = &binary.right {
-                    if unary.operator == oxc_syntax::operator::UnaryOperator::UnaryNegation {
-                        if let Expression::NumericLiteral(lit) = &unary.argument {
-                            return Some((idx, lit.value as i64)); // param - -N = param + N
-                        }
-                    }
+                if let Expression::UnaryExpression(unary) = &binary.right
+                    && unary.operator == oxc_syntax::operator::UnaryOperator::UnaryNegation
+                    && let Expression::NumericLiteral(lit) = &unary.argument
+                {
+                    return Some((idx, lit.value as i64)); // param - -N = param + N
                 }
             }
             oxc_syntax::operator::BinaryOperator::Addition => {
@@ -624,27 +622,21 @@ impl RC4DecoderAnalyzer {
 }
 
 impl<'a> Visit<'a> for RC4DecoderAnalyzer {
-    fn visit_assignment_expression(
-        &mut self,
-        assignment: &oxc_ast::ast::AssignmentExpression<'a>,
-    ) {
-        if assignment.operator == oxc_syntax::operator::AssignmentOperator::Assign {
-            if let Expression::BinaryExpression(binary) = &assignment.right {
-                if binary.operator == oxc_syntax::operator::BinaryOperator::Subtraction {
-                    if self.subtraction_offset.is_none() {
-                        // Try a direct numeric literal first.
-                        if let Expression::NumericLiteral(literal) = &binary.right {
-                            self.subtraction_offset = Some(literal.value);
-                        } else {
-                            // Try evaluating a compound expression (e.g., `0x1379 + -0x13c6 + 0x207`).
-                            if let Some(value) =
-                                crate::utils::eval::try_eval(&binary.right)
-                                    .and_then(|v| v.as_number())
-                            {
-                                self.subtraction_offset = Some(value);
-                            }
-                        }
-                    }
+    fn visit_assignment_expression(&mut self, assignment: &oxc_ast::ast::AssignmentExpression<'a>) {
+        if assignment.operator == oxc_syntax::operator::AssignmentOperator::Assign
+            && let Expression::BinaryExpression(binary) = &assignment.right
+            && binary.operator == oxc_syntax::operator::BinaryOperator::Subtraction
+            && self.subtraction_offset.is_none()
+        {
+            // Try a direct numeric literal first.
+            if let Expression::NumericLiteral(literal) = &binary.right {
+                self.subtraction_offset = Some(literal.value);
+            } else {
+                // Try evaluating a compound expression (e.g., `0x1379 + -0x13c6 + 0x207`).
+                if let Some(value) =
+                    crate::utils::eval::try_eval(&binary.right).and_then(|v| v.as_number())
+                {
+                    self.subtraction_offset = Some(value);
                 }
             }
         }
@@ -686,9 +678,11 @@ fn extract_rotation_iife<'a>(
     // (comma-joined with other IIFEs in minified code).
     if let Expression::SequenceExpression(sequence) = expression {
         for sub_expression in &sequence.expressions {
-            if let Some(target) =
-                try_extract_iife_call(unwrap_parens(sub_expression), array_function_symbol, context)
-            {
+            if let Some(target) = try_extract_iife_call(
+                unwrap_parens(sub_expression),
+                array_function_symbol,
+                context,
+            ) {
                 return Some(target);
             }
         }
@@ -756,14 +750,12 @@ fn solve_rotation_rc4(
     // Extract wrapper functions from inside the IIFE for checksum evaluation.
     let wrappers = extract_iife_wrappers(iife_statement, decoder_symbol, context);
 
-    for rotation in 0..array_len {
+    for _rotation in 0..array_len {
         let checksum = eval_rc4_checksum(iife_statement, &rotated, base_offset, &wrappers);
-        if rotation < 3 || rotation == 309 || checksum.is_some() {
-        }
-        if let Some(checksum) = checksum {
-            if checksum == target {
-                return Some(rotated);
-            }
+        if let Some(checksum) = checksum
+            && checksum == target
+        {
+            return Some(rotated);
         }
 
         // Rotate left by 1.
@@ -794,15 +786,16 @@ fn extract_iife_wrappers(
     let expression = unwrap_parens(&expr_stmt.expression);
 
     // The IIFE call may be inside a SequenceExpression.
-    let iife_calls: Vec<&Expression<'_>> = if let Expression::SequenceExpression(sequence) = expression {
-        sequence
-            .expressions
-            .iter()
-            .map(|e| unwrap_parens(e))
-            .collect()
-    } else {
-        vec![expression]
-    };
+    let iife_calls: Vec<&Expression<'_>> =
+        if let Expression::SequenceExpression(sequence) = expression {
+            sequence
+                .expressions
+                .iter()
+                .map(|e| unwrap_parens(e))
+                .collect()
+        } else {
+            vec![expression]
+        };
 
     for call_expression in iife_calls {
         let Expression::CallExpression(call) = call_expression else {
@@ -825,10 +818,10 @@ fn extract_iife_wrappers(
             };
             let name = binding.name.to_string();
 
-            if let Some((target_sym, mapping)) = classify_wrapper_function(function, context) {
-                if target_sym == decoder_symbol {
-                    wrappers.push(IIFEWrapper { name, mapping });
-                }
+            if let Some((target_sym, mapping)) = classify_wrapper_function(function, context)
+                && target_sym == decoder_symbol
+            {
+                wrappers.push(IIFEWrapper { name, mapping });
             }
         }
     }
@@ -850,7 +843,11 @@ fn eval_rc4_checksum(
 
     // The IIFE call may be inside a SequenceExpression.
     let calls: Vec<&Expression<'_>> = if let Expression::SequenceExpression(sequence) = expression {
-        sequence.expressions.iter().map(|e| unwrap_parens(e)).collect()
+        sequence
+            .expressions
+            .iter()
+            .map(|e| unwrap_parens(e))
+            .collect()
     } else {
         vec![expression]
     };
@@ -867,7 +864,8 @@ fn eval_rc4_checksum(
             continue;
         };
 
-        if let Some(result) = find_checksum_in_body(&body.statements, array, base_offset, wrappers) {
+        if let Some(result) = find_checksum_in_body(&body.statements, array, base_offset, wrappers)
+        {
             return Some(result);
         }
     }
@@ -885,21 +883,20 @@ fn find_checksum_in_body(
         match statement {
             Statement::VariableDeclaration(declaration) => {
                 for declarator in &declaration.declarations {
-                    if let Some(init) = &declarator.init {
-                        let result = eval_rc4_expression(init, array, base_offset, wrappers);
-                        if result.is_some() {
-                            return Some(result.unwrap() as i64);
-                        }
+                    if let Some(init) = &declarator.init
+                        && let Some(result) =
+                            eval_rc4_expression(init, array, base_offset, wrappers)
+                    {
+                        return Some(result as i64);
                     }
                 }
             }
             Statement::WhileStatement(while_stmt) => {
-                if let Statement::BlockStatement(block) = &while_stmt.body {
-                    if let Some(result) =
+                if let Statement::BlockStatement(block) = &while_stmt.body
+                    && let Some(result) =
                         find_checksum_in_body(&block.body, array, base_offset, wrappers)
-                    {
-                        return Some(result);
-                    }
+                {
+                    return Some(result);
                 }
             }
             Statement::TryStatement(try_stmt) => {
@@ -932,41 +929,34 @@ fn eval_rc4_expression(
     let expression = unwrap_parens(expression);
 
     // parseInt(wrapper(...)) — resolve the wrapper call via RC4 decode.
-    if let Expression::CallExpression(call) = expression {
-        if let Expression::Identifier(callee_id) = &call.callee {
-            if callee_id.name.as_str() == "parseInt" && !call.arguments.is_empty() {
-                if let Some(arg) = call.arguments[0].as_expression() {
-                    let arg = unwrap_parens(arg);
+    if let Expression::CallExpression(call) = expression
+        && let Expression::Identifier(callee_id) = &call.callee
+        && callee_id.name.as_str() == "parseInt"
+        && !call.arguments.is_empty()
+        && let Some(arg) = call.arguments[0].as_expression()
+    {
+        let arg = unwrap_parens(arg);
 
-                    if let Expression::CallExpression(inner_call) = arg {
-                        if let Expression::Identifier(inner_callee) = &inner_call.callee {
-                            // Try to resolve via wrapper functions.
-                            let wrapper = wrappers
-                                .iter()
-                                .find(|w| w.name == inner_callee.name.as_str());
+        if let Expression::CallExpression(inner_call) = arg
+            && let Expression::Identifier(inner_callee) = &inner_call.callee
+        {
+            // Try to resolve via wrapper functions.
+            let wrapper = wrappers
+                .iter()
+                .find(|w| w.name == inner_callee.name.as_str());
 
-                            if let Some(wrapper) = wrapper {
-                                let raw_index = extract_numeric_arg(
-                                    &inner_call.arguments[wrapper.mapping.index_parameter],
-                                )?;
-                                let key = extract_string_arg(
-                                    &inner_call.arguments[wrapper.mapping.key_parameter],
-                                )?;
-                                let effective =
-                                    raw_index as i64 + wrapper.mapping.index_offset;
-                                let array_index =
-                                    (effective - base_offset as i64) as usize;
-                                if array_index >= array.len() {
-                                    return None;
-                                }
-                                let encoded = &array[array_index];
-                                let decoded =
-                                    crate::utils::base64_rc4_decode(encoded, &key)?;
-                                return crate::utils::eval::js_parse_int(&decoded, None);
-                            }
-                        }
-                    }
+            if let Some(wrapper) = wrapper {
+                let raw_index =
+                    extract_numeric_arg(&inner_call.arguments[wrapper.mapping.index_parameter])?;
+                let key = extract_string_arg(&inner_call.arguments[wrapper.mapping.key_parameter])?;
+                let effective = raw_index as i64 + wrapper.mapping.index_offset;
+                let array_index = (effective - base_offset as i64) as usize;
+                if array_index >= array.len() {
+                    return None;
                 }
+                let encoded = &array[array_index];
+                let decoded = crate::utils::base64_rc4_decode(encoded, &key)?;
+                return crate::utils::eval::js_parse_int(&decoded, None);
             }
         }
     }
@@ -990,9 +980,7 @@ fn eval_rc4_expression(
             oxc_syntax::operator::BinaryOperator::Subtraction => Some(left - right),
             oxc_syntax::operator::BinaryOperator::Multiplication => Some(left * right),
             oxc_syntax::operator::BinaryOperator::Division if right != 0.0 => Some(left / right),
-            oxc_syntax::operator::BinaryOperator::Remainder if right != 0.0 => {
-                Some(left % right)
-            }
+            oxc_syntax::operator::BinaryOperator::Remainder if right != 0.0 => Some(left % right),
             _ => None,
         };
     }
@@ -1000,4 +988,3 @@ fn eval_rc4_expression(
     // Leaf values — delegate to the shared evaluator.
     crate::utils::eval::try_eval(expression)?.as_number()
 }
-

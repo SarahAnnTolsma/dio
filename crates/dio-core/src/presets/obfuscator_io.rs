@@ -14,31 +14,21 @@ use crate::transforms;
 
 /// Returns transformers targeting Obfuscator.io patterns.
 pub fn transformers() -> Vec<Box<dyn Transformer>> {
-    let mut result = Vec::new();
-
     // Obfuscator.io-specific transforms run first.
     // RC4 decoder must run before other string array transformers since they
     // might incorrectly consume the rotation IIFE.
-    result.push(
+    let mut result = vec![
         Box::new(transforms::obfuscator_io::StringArrayRC4DecoderTransformer::default())
             as Box<dyn Transformer>,
-    );
-    result.push(
         Box::new(transforms::obfuscator_io::StringArrayDecoderTransformer::default())
             as Box<dyn Transformer>,
-    );
-    result.push(
         Box::new(transforms::obfuscator_io::StringArrayRotationTransformer::default())
             as Box<dyn Transformer>,
-    );
-    result.push(
         Box::new(transforms::obfuscator_io::ControlFlowArrayTransformer::default())
             as Box<dyn Transformer>,
-    );
-    result.push(
         Box::new(transforms::obfuscator_io::ControlFlowFlatteningTransformer)
             as Box<dyn Transformer>,
-    );
+    ];
 
     // Then all general-purpose transforms.
     result.extend(transforms::default_transformers());

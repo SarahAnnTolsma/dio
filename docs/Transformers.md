@@ -83,7 +83,7 @@ Transformers that rename obfuscated identifiers.
 
 These transformers are only enabled when using a specific preset.
 
-### Obfuscator.io (`--preset obfuscator-io`)
+### Obfuscator.io (`--presets obfuscator-io`)
 
 | Transformer | Description |
 |---|---|
@@ -101,6 +101,14 @@ Extends Obfuscator.io with DataDome-specific patterns.
 |---|---|
 | SetTimeoutUnwrapTransformer | Unwraps `setTimeout(function() { x = value; }, 0)` into direct assignments |
 
+### Debundler (`--preset debundler`)
+
+Annotates bundled modules for readability. Can be combined with other presets.
+
+| Transformer | Description |
+|---|---|
+| BrowserifyAnnotationTransformer | Names anonymous module functions and adds `/** @type */` JSDoc comments on require calls |
+
 ## Presets
 
 Presets provide curated transformer sets optimized for specific obfuscation tools.
@@ -108,8 +116,9 @@ Presets provide curated transformer sets optimized for specific obfuscation tool
 | Preset | CLI flag | Description |
 |---|---|---|
 | Generic | `--preset generic` | Default transformer set — handles common patterns across many tools |
-| ObfuscatorIo | `--preset obfuscator-io` | Targets Obfuscator.io / javascript-obfuscator output |
+| ObfuscatorIo | `--presets obfuscator-io` | Targets Obfuscator.io / javascript-obfuscator output |
 | DataDome | `--preset datadome` | Extends Obfuscator.io with DataDome anti-bot script patterns |
+| Debundler | `--preset debundler` | Annotates bundled modules (Browserify) with named functions and JSDoc types |
 | JsFuck | `--preset jsfuck` | Focused subset for JSFuck-encoded JavaScript |
 
 ### Usage
@@ -127,7 +136,8 @@ deobfuscator.add_transformers(dio_core::obfuscator_io_transformers());
 
 ```bash
 # CLI
-dio --preset obfuscator-io input.js -o output.js
-dio --preset datadome input.js -o output.js
-dio --preset jsfuck encoded.js
+dio --presets obfuscator-io input.js -o output.js
+dio --presets datadome input.js -o output.js
+dio --presets datadome,debundler input.js -o output.js
+dio --presets jsfuck encoded.js
 ```

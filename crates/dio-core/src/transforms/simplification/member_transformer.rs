@@ -21,7 +21,10 @@ impl Transformer for MemberTransformer {
     }
 
     fn interests(&self) -> &[AstNodeType] {
-        &[AstNodeType::MemberExpression, AstNodeType::AssignmentExpression]
+        &[
+            AstNodeType::MemberExpression,
+            AstNodeType::AssignmentExpression,
+        ]
     }
 
     fn priority(&self) -> TransformerPriority {

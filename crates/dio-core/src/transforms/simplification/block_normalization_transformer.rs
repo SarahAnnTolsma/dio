@@ -82,18 +82,12 @@ impl Transformer for BlockNormalizationTransformer {
 
 /// Wrap a statement in a block statement if it isn't one already.
 /// Returns `true` if a wrapping was performed.
-fn wrap_in_block<'a>(
-    statement: &mut Statement<'a>,
-    context: &mut TraverseCtx<'a, ()>,
-) -> bool {
+fn wrap_in_block<'a>(statement: &mut Statement<'a>, context: &mut TraverseCtx<'a, ()>) -> bool {
     if matches!(statement, Statement::BlockStatement(_)) {
         return false;
     }
 
-    let original = std::mem::replace(
-        statement,
-        context.ast.statement_empty(oxc_span::SPAN),
-    );
+    let original = std::mem::replace(statement, context.ast.statement_empty(oxc_span::SPAN));
     let body = context.ast.vec_from_array([original]);
     *statement = operations::create_block_statement(body, context);
     true

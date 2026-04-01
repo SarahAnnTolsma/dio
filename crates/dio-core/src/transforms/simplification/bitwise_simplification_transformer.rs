@@ -259,9 +259,10 @@ fn try_match_single_operand(
     }
 
     for &candidate in SINGLE_OPERAND_CANDIDATES {
-        let matches = TEST_SINGLES.iter().zip(&results).all(|(&a, &result)| {
-            evaluate_canonical(candidate, a, 0) == result
-        });
+        let matches = TEST_SINGLES
+            .iter()
+            .zip(&results)
+            .all(|(&a, &result)| evaluate_canonical(candidate, a, 0) == result);
         if matches {
             return Some(candidate);
         }
@@ -287,9 +288,10 @@ fn try_match_two_operands(
     }
 
     for &candidate in TWO_OPERAND_CANDIDATES {
-        let matches = TEST_PAIRS.iter().zip(&results).all(|(&(a, b), &result)| {
-            evaluate_canonical(candidate, a, b) == result
-        });
+        let matches = TEST_PAIRS
+            .iter()
+            .zip(&results)
+            .all(|(&(a, b), &result)| evaluate_canonical(candidate, a, b) == result);
         if matches {
             return Some(candidate);
         }
@@ -364,9 +366,7 @@ fn collect_operands(expression: &Expression<'_>, names: &mut Vec<String>) -> boo
         Expression::UnaryExpression(unary) => {
             matches!(
                 unary.operator,
-                UnaryOperator::BitwiseNot
-                    | UnaryOperator::UnaryNegation
-                    | UnaryOperator::UnaryPlus
+                UnaryOperator::BitwiseNot | UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus
             ) && collect_operands(&unary.argument, names)
         }
         Expression::BinaryExpression(binary) => {

@@ -76,7 +76,13 @@ impl Preset {
 
     /// Returns all known preset names for help text.
     pub fn all_names() -> &'static [&'static str] {
-        &["generic", "obfuscator-io", "datadome", "debundler", "jsfuck"]
+        &[
+            "generic",
+            "obfuscator-io",
+            "datadome",
+            "debundler",
+            "jsfuck",
+        ]
     }
 }
 

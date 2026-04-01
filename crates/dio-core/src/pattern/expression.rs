@@ -174,9 +174,10 @@ impl ExpressionPattern {
             // -- Concrete matchers --
             ExpressionPattern::Identifier(name) => {
                 if let Expression::Identifier(identifier) = expression
-                    && identifier.name.as_str() == name {
-                        return MatchResult::matched();
-                    }
+                    && identifier.name.as_str() == name
+                {
+                    return MatchResult::matched();
+                }
                 MatchResult::no_match()
             }
 
@@ -190,9 +191,10 @@ impl ExpressionPattern {
 
             ExpressionPattern::Number(expected) => {
                 if let Expression::NumericLiteral(number) = expression
-                    && (number.value - expected).abs() < f64::EPSILON {
-                        return MatchResult::matched();
-                    }
+                    && (number.value - expected).abs() < f64::EPSILON
+                {
+                    return MatchResult::matched();
+                }
                 MatchResult::no_match()
             }
 
@@ -206,9 +208,10 @@ impl ExpressionPattern {
 
             ExpressionPattern::StringLiteral(expected) => {
                 if let Expression::StringLiteral(string) = expression
-                    && string.value.as_str() == expected {
-                        return MatchResult::matched();
-                    }
+                    && string.value.as_str() == expected
+                {
+                    return MatchResult::matched();
+                }
                 MatchResult::no_match()
             }
 
@@ -222,9 +225,10 @@ impl ExpressionPattern {
 
             ExpressionPattern::Boolean(expected) => {
                 if let Expression::BooleanLiteral(boolean) = expression
-                    && boolean.value == *expected {
-                        return MatchResult::matched();
-                    }
+                    && boolean.value == *expected
+                {
+                    return MatchResult::matched();
+                }
                 MatchResult::no_match()
             }
 
@@ -238,20 +242,21 @@ impl ExpressionPattern {
 
             ExpressionPattern::BinaryExpression(operator, left_pattern, right_pattern) => {
                 if let Expression::BinaryExpression(binary) = expression
-                    && binary.operator == *operator {
-                        let left_result = left_pattern.match_expression(&binary.left);
-                        if !left_result.matched {
-                            return MatchResult::no_match();
-                        }
-                        let right_result = right_pattern.match_expression(&binary.right);
-                        if !right_result.matched {
-                            return MatchResult::no_match();
-                        }
-                        let mut result = MatchResult::matched();
-                        result.merge_captures(&left_result);
-                        result.merge_captures(&right_result);
-                        return result;
+                    && binary.operator == *operator
+                {
+                    let left_result = left_pattern.match_expression(&binary.left);
+                    if !left_result.matched {
+                        return MatchResult::no_match();
                     }
+                    let right_result = right_pattern.match_expression(&binary.right);
+                    if !right_result.matched {
+                        return MatchResult::no_match();
+                    }
+                    let mut result = MatchResult::matched();
+                    result.merge_captures(&left_result);
+                    result.merge_captures(&right_result);
+                    return result;
+                }
                 MatchResult::no_match()
             }
 
@@ -265,9 +270,10 @@ impl ExpressionPattern {
 
             ExpressionPattern::UnaryExpression(operator, argument_pattern) => {
                 if let Expression::UnaryExpression(unary) = expression
-                    && unary.operator == *operator {
-                        return argument_pattern.match_expression(&unary.argument);
-                    }
+                    && unary.operator == *operator
+                {
+                    return argument_pattern.match_expression(&unary.argument);
+                }
                 MatchResult::no_match()
             }
 
@@ -391,30 +397,29 @@ impl ExpressionPattern {
 
             ExpressionPattern::AssignmentExpression(operator, left_pattern, right_pattern) => {
                 if let Expression::AssignmentExpression(assignment) = expression
-                    && assignment.operator == *operator {
-                        // The left side of an assignment is an AssignmentTarget, not an Expression.
-                        // For simple identifier targets, we can match against the name.
-                        let left_match = match (&assignment.left, left_pattern.as_ref()) {
-                            (
-                                oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(
-                                    identifier,
-                                ),
-                                ExpressionPattern::Identifier(name),
-                            ) => identifier.name.as_str() == name,
-                            (
-                                oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(_),
-                                ExpressionPattern::AnyIdentifier | ExpressionPattern::Any,
-                            ) => true,
-                            _ => false,
-                        };
+                    && assignment.operator == *operator
+                {
+                    // The left side of an assignment is an AssignmentTarget, not an Expression.
+                    // For simple identifier targets, we can match against the name.
+                    let left_match = match (&assignment.left, left_pattern.as_ref()) {
+                        (
+                            oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(identifier),
+                            ExpressionPattern::Identifier(name),
+                        ) => identifier.name.as_str() == name,
+                        (
+                            oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(_),
+                            ExpressionPattern::AnyIdentifier | ExpressionPattern::Any,
+                        ) => true,
+                        _ => false,
+                    };
 
-                        if left_match {
-                            let right_result = right_pattern.match_expression(&assignment.right);
-                            if right_result.matched {
-                                return right_result;
-                            }
+                    if left_match {
+                        let right_result = right_pattern.match_expression(&assignment.right);
+                        if right_result.matched {
+                            return right_result;
                         }
                     }
+                }
                 MatchResult::no_match()
             }
 

@@ -100,8 +100,7 @@ impl Transformer for DeclarationMergeTransformer {
                 else {
                     continue;
                 };
-                let Expression::AssignmentExpression(assignment) =
-                    &expression_statement.expression
+                let Expression::AssignmentExpression(assignment) = &expression_statement.expression
                 else {
                     continue;
                 };
@@ -148,8 +147,7 @@ impl Transformer for DeclarationMergeTransformer {
             else {
                 continue;
             };
-            let Expression::AssignmentExpression(assignment) =
-                &mut expression_statement.expression
+            let Expression::AssignmentExpression(assignment) = &mut expression_statement.expression
             else {
                 continue;
             };

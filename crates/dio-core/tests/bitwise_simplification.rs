@@ -10,16 +10,16 @@ use common::deobfuscate;
 #[test]
 fn xor_via_and_or_not() {
     // (A & ~B) | (~A & B) = A ^ B
-    assert_eq!(deobfuscate("var x = (a & ~b) | (~a & b);"), "var x = a ^ b;");
+    assert_eq!(
+        deobfuscate("var x = (a & ~b) | (~a & b);"),
+        "var x = a ^ b;"
+    );
 }
 
 #[test]
 fn xor_via_or_and_nand() {
     // (A | B) & ~(A & B) = A ^ B
-    assert_eq!(
-        deobfuscate("var x = (a | b) & ~(a & b);"),
-        "var x = a ^ b;"
-    );
+    assert_eq!(deobfuscate("var x = (a | b) & ~(a & b);"), "var x = a ^ b;");
 }
 
 // ---------------------------------------------------------------------------
@@ -123,10 +123,7 @@ fn addition_via_carry_decomposition() {
 #[test]
 fn addition_via_or_and() {
     // (A | B) + (A & B) = A + B
-    assert_eq!(
-        deobfuscate("var x = (a | b) + (a & b);"),
-        "var x = a + b;"
-    );
+    assert_eq!(deobfuscate("var x = (a | b) + (a & b);"), "var x = a + b;");
 }
 
 // ---------------------------------------------------------------------------

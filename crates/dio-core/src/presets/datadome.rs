@@ -15,9 +15,8 @@ pub fn transformers() -> Vec<Box<dyn Transformer>> {
     let mut result = Vec::new();
 
     // DataDome-specific transforms.
-    result.push(
-        Box::new(transforms::datadome::SetTimeoutUnwrapTransformer) as Box<dyn Transformer>,
-    );
+    result
+        .push(Box::new(transforms::datadome::SetTimeoutUnwrapTransformer) as Box<dyn Transformer>);
 
     // Include all Obfuscator.io transforms.
     result.extend(obfuscator_io::transformers());

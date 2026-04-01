@@ -167,10 +167,7 @@ fn is_side_effect_free_expression(expression: &Expression<'_>) -> bool {
         }
         // `undefined`, `NaN`, `Infinity` — no side effects when standalone.
         Expression::Identifier(identifier) => {
-            matches!(
-                identifier.name.as_str(),
-                "undefined" | "NaN" | "Infinity"
-            )
+            matches!(identifier.name.as_str(), "undefined" | "NaN" | "Infinity")
         }
         Expression::ParenthesizedExpression(paren) => {
             is_side_effect_free_expression(&paren.expression)

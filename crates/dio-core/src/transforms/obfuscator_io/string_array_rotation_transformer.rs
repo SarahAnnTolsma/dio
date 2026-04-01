@@ -105,7 +105,6 @@ impl StringArrayRotationTransformer {
             }
         }
 
-
         if array_functions.is_empty() {
             return None;
         }
@@ -150,17 +149,13 @@ impl StringArrayRotationTransformer {
                         // Try up to array_len rotations (it must converge within one full cycle).
                         let mut found = false;
                         for _ in 0..array_len {
-                            let checksum = Self::compute_checksum(
-                                &array,
-                                offset,
-                                iife_statement,
-                            );
+                            let checksum = Self::compute_checksum(&array, offset, iife_statement);
 
-                            if let Some(checksum) = checksum {
-                                if checksum == target {
-                                    found = true;
-                                    break;
-                                }
+                            if let Some(checksum) = checksum
+                                && checksum == target
+                            {
+                                found = true;
+                                break;
                             }
 
                             // Rotate left by 1: push(shift())
@@ -191,9 +186,7 @@ impl StringArrayRotationTransformer {
     }
 
     /// Extract the string array from a self-replacing function.
-    fn extract_self_replacing_array(
-        function: &oxc_ast::ast::Function<'_>,
-    ) -> Option<Vec<String>> {
+    fn extract_self_replacing_array(function: &oxc_ast::ast::Function<'_>) -> Option<Vec<String>> {
         let body = function.body.as_ref()?;
 
         // Must have no parameters.
@@ -207,28 +200,25 @@ impl StringArrayRotationTransformer {
         for statement in &body.statements {
             if let Statement::VariableDeclaration(declaration) = statement {
                 for declarator in &declaration.declarations {
-                    if let Some(init) = &declarator.init {
-                        if let Expression::ArrayExpression(array) = init {
-                            let mut elements = Vec::new();
-                            let mut all_strings = true;
+                    if let Some(init) = &declarator.init
+                        && let Expression::ArrayExpression(array) = init
+                    {
+                        let mut elements = Vec::new();
+                        let mut all_strings = true;
 
-                            for element in &array.elements {
-                                if let Some(expr) = element.as_expression() {
-                                    if let Expression::StringLiteral(literal) = expr {
-                                        elements.push(literal.value.to_string());
-                                    } else {
-                                        all_strings = false;
-                                        break;
-                                    }
-                                } else {
-                                    all_strings = false;
-                                    break;
-                                }
+                        for element in &array.elements {
+                            if let Some(Expression::StringLiteral(literal)) =
+                                element.as_expression()
+                            {
+                                elements.push(literal.value.to_string());
+                            } else {
+                                all_strings = false;
+                                break;
                             }
+                        }
 
-                            if all_strings && elements.len() >= 3 {
-                                found_array = Some(elements);
-                            }
+                        if all_strings && elements.len() >= 3 {
+                            found_array = Some(elements);
                         }
                     }
                 }
@@ -261,9 +251,10 @@ impl StringArrayRotationTransformer {
 
         // Must call one of the array functions.
         let array_func_index = array_functions.iter().position(|af| {
-            analyzer.called_function_names.iter().any(|name| {
-                context.scoping().symbol_name(af.symbol_id) == name.as_str()
-            })
+            analyzer
+                .called_function_names
+                .iter()
+                .any(|name| context.scoping().symbol_name(af.symbol_id) == name.as_str())
         })?;
 
         Some((array_func_index, offset))
@@ -304,25 +295,18 @@ impl StringArrayRotationTransformer {
         }
 
         // First argument must reference the array function.
-        let Some(first_arg) = call.arguments[0].as_expression() else {
+        let Expression::Identifier(id) = unwrap_parens(call.arguments[0].as_expression()?) else {
             return None;
         };
-        let Expression::Identifier(id) = unwrap_parens(first_arg) else {
-            return None;
-        };
-        let Some(ref_id) = id.reference_id.get() else {
-            return None;
-        };
+        let ref_id = id.reference_id.get()?;
         let reference = context.scoping().get_reference(ref_id);
         if reference.symbol_id() != Some(array_function_symbol_id) {
             return None;
         }
 
         // Second argument must be a numeric literal (the target checksum).
-        let Some(second_arg) = call.arguments[1].as_expression() else {
-            return None;
-        };
-        let Expression::NumericLiteral(target) = unwrap_parens(second_arg) else {
+        let Expression::NumericLiteral(target) = unwrap_parens(call.arguments[1].as_expression()?)
+        else {
             return None;
         };
 
@@ -364,7 +348,6 @@ impl StringArrayRotationTransformer {
         find_and_eval_checksum_in_body(&body.statements, array, offset)
     }
 }
-
 
 impl StringArrayRotationTransformer {
     /// Scan a statement list for variable declarations like `var alias = decoder;`
@@ -410,11 +393,11 @@ impl StringArrayRotationTransformer {
                     continue;
                 };
 
-                if init_symbol_id == decoder_symbol_id {
-                    if let Some(decoder_info) = decoders.get(&decoder_symbol_id) {
-                        let cloned = decoder_info.clone();
-                        decoders.insert(alias_symbol_id, cloned);
-                    }
+                if init_symbol_id == decoder_symbol_id
+                    && let Some(decoder_info) = decoders.get(&decoder_symbol_id)
+                {
+                    let cloned = decoder_info.clone();
+                    decoders.insert(alias_symbol_id, cloned);
                 }
             }
         }
@@ -449,19 +432,14 @@ impl OffsetDecoderAnalyzer {
 }
 
 impl<'a> Visit<'a> for OffsetDecoderAnalyzer {
-    fn visit_assignment_expression(
-        &mut self,
-        assignment: &oxc_ast::ast::AssignmentExpression<'a>,
-    ) {
+    fn visit_assignment_expression(&mut self, assignment: &oxc_ast::ast::AssignmentExpression<'a>) {
         // Look for `param = param - OFFSET`
-        if assignment.operator == oxc_syntax::operator::AssignmentOperator::Assign {
-            if let Expression::BinaryExpression(binary) = &assignment.right {
-                if binary.operator == oxc_syntax::operator::BinaryOperator::Subtraction {
-                    if let Expression::NumericLiteral(literal) = &binary.right {
-                        self.subtraction_offset = Some(literal.value);
-                    }
-                }
-            }
+        if assignment.operator == oxc_syntax::operator::AssignmentOperator::Assign
+            && let Expression::BinaryExpression(binary) = &assignment.right
+            && binary.operator == oxc_syntax::operator::BinaryOperator::Subtraction
+            && let Expression::NumericLiteral(literal) = &binary.right
+        {
+            self.subtraction_offset = Some(literal.value);
         }
         walk::walk_assignment_expression(self, assignment);
     }
@@ -485,20 +463,18 @@ fn find_and_eval_checksum_in_body(
         match statement {
             Statement::VariableDeclaration(declaration) => {
                 for declarator in &declaration.declarations {
-                    if let Some(init) = &declarator.init {
-                        if let Some(result) = eval_checksum_expression(init, array, offset) {
-                            return Some(result as i64);
-                        }
+                    if let Some(init) = &declarator.init
+                        && let Some(result) = eval_checksum_expression(init, array, offset)
+                    {
+                        return Some(result as i64);
                     }
                 }
             }
             Statement::WhileStatement(while_stmt) => {
-                if let Statement::BlockStatement(block) = &while_stmt.body {
-                    if let Some(result) =
-                        find_and_eval_checksum_in_body(&block.body, array, offset)
-                    {
-                        return Some(result);
-                    }
+                if let Statement::BlockStatement(block) = &while_stmt.body
+                    && let Some(result) = find_and_eval_checksum_in_body(&block.body, array, offset)
+                {
+                    return Some(result);
                 }
             }
             Statement::TryStatement(try_stmt) => {
@@ -509,9 +485,7 @@ fn find_and_eval_checksum_in_body(
                 }
             }
             Statement::BlockStatement(block) => {
-                if let Some(result) =
-                    find_and_eval_checksum_in_body(&block.body, array, offset)
-                {
+                if let Some(result) = find_and_eval_checksum_in_body(&block.body, array, offset) {
                     return Some(result);
                 }
             }
@@ -537,30 +511,26 @@ fn eval_checksum_expression(
     // evaluated by try_eval because it depends on the array rotation state.
     if let Expression::CallExpression(call) = expression {
         let callee = unwrap_parens(&call.callee);
-        if let Expression::Identifier(id) = callee {
-            if id.name.as_str() == "parseInt" && !call.arguments.is_empty() {
-                if let Some(arg) = call.arguments[0].as_expression() {
-                    let arg = unwrap_parens(arg);
+        if let Expression::Identifier(id) = callee
+            && id.name.as_str() == "parseInt"
+            && !call.arguments.is_empty()
+            && let Some(arg) = call.arguments[0].as_expression()
+        {
+            let arg = unwrap_parens(arg);
 
-                    // parseInt(decoder(HEX)) — simulate the decoder call.
-                    if let Expression::CallExpression(inner_call) = arg {
-                        if inner_call.arguments.len() == 1 {
-                            if let Some(inner_arg) = inner_call.arguments[0].as_expression() {
-                                if let Expression::NumericLiteral(literal) =
-                                    unwrap_parens(inner_arg)
-                                {
-                                    let raw_index = literal.value as usize;
-                                    let array_index = raw_index.checked_sub(offset)?;
-                                    if array_index >= array.len() {
-                                        return None;
-                                    }
-                                    let element = &array[array_index];
-                                    return crate::utils::eval::js_parse_int(element, None);
-                                }
-                            }
-                        }
-                    }
+            // parseInt(decoder(HEX)) — simulate the decoder call.
+            if let Expression::CallExpression(inner_call) = arg
+                && inner_call.arguments.len() == 1
+                && let Some(inner_arg) = inner_call.arguments[0].as_expression()
+                && let Expression::NumericLiteral(literal) = unwrap_parens(inner_arg)
+            {
+                let raw_index = literal.value as usize;
+                let array_index = raw_index.checked_sub(offset)?;
+                if array_index >= array.len() {
+                    return None;
                 }
+                let element = &array[array_index];
+                return crate::utils::eval::js_parse_int(element, None);
             }
         }
     }
@@ -641,7 +611,13 @@ impl Transformer for StringArrayRotationTransformer {
             // Scan ALL statement lists (not just this one) for aliases.
             // Since enter_statements is called for each statement list,
             // we scan the current one for `var x = decoderName;` patterns.
-            Self::find_aliases(statements, decoder_symbol_id, &decoder_name, &mut decoders, context);
+            Self::find_aliases(
+                statements,
+                decoder_symbol_id,
+                &decoder_name,
+                &mut decoders,
+                context,
+            );
 
             // Don't remove declarations here — let the call site replacements
             // in enter_expression remove references first, then the unused
@@ -656,7 +632,13 @@ impl Transformer for StringArrayRotationTransformer {
                     .map(|&sid| (sid, context.scoping().symbol_name(sid).to_string()))
                     .collect();
                 for (decoder_symbol_id, decoder_name) in &known {
-                    Self::find_aliases(statements, *decoder_symbol_id, decoder_name, &mut decoders, context);
+                    Self::find_aliases(
+                        statements,
+                        *decoder_symbol_id,
+                        decoder_name,
+                        &mut decoders,
+                        context,
+                    );
                 }
             }
         }

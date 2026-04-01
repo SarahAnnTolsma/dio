@@ -143,8 +143,8 @@ pub fn annotate_browserify_requires(source: &str) -> String {
 
     // Build a reverse map: dependency name → readable module name.
     let reverse_map: HashMap<String, String> = dep_map
-        .iter()
-        .map(|(name, _id)| (name.clone(), path_to_identifier(name)))
+        .keys()
+        .map(|name| (name.clone(), path_to_identifier(name)))
         .collect();
 
     // Extract the set of require parameter names from module function signatures.
@@ -166,38 +166,38 @@ pub fn annotate_browserify_requires(source: &str) -> String {
             let call_start = pos;
             let after_paren = &remaining[call_start + param_len + 1..]; // skip `name(`
             let quote = after_paren.as_bytes()[0];
-            if quote == b'"' || quote == b'\'' {
-                if let Some(end_quote) = after_paren[1..].find(quote as char) {
-                    let module_name = &after_paren[1..1 + end_quote];
+            if (quote == b'"' || quote == b'\'')
+                && let Some(end_quote) = after_paren[1..].find(quote as char)
+            {
+                let module_name = &after_paren[1..1 + end_quote];
 
-                    if let Some(module_func_name) = reverse_map.get(module_name) {
-                        let annotation = format!("/** @type {{{module_func_name}}} */ ");
+                if let Some(module_func_name) = reverse_map.get(module_name) {
+                    let annotation = format!("/** @type {{{module_func_name}}} */ ");
 
-                        // Look backwards on the same line for `var ` to attach
-                        // the annotation to the variable declaration.
-                        let line_before = &remaining[..call_start];
-                        let line_start = line_before.rfind('\n').map_or(0, |p| p + 1);
-                        let line_prefix = &remaining[line_start..call_start];
+                    // Look backwards on the same line for `var ` to attach
+                    // the annotation to the variable declaration.
+                    let line_before = &remaining[..call_start];
+                    let line_start = line_before.rfind('\n').map_or(0, |p| p + 1);
+                    let line_prefix = &remaining[line_start..call_start];
 
-                        if let Some(var_offset) = line_prefix.rfind("var ") {
-                            // Insert before `var`.
-                            let insert_at = line_start + var_offset;
-                            result.push_str(&remaining[..insert_at]);
-                            result.push_str(&annotation);
-                            remaining = &remaining[insert_at..];
-                        } else {
-                            // No var — insert before the require call.
-                            result.push_str(&remaining[..call_start]);
-                            result.push_str(&annotation);
-                            remaining = &remaining[call_start..];
-                        }
-
-                        // Advance past the require call.
-                        let close_paren = remaining.find(')').unwrap_or(0) + 1;
-                        result.push_str(&remaining[..close_paren]);
-                        remaining = &remaining[close_paren..];
-                        continue;
+                    if let Some(var_offset) = line_prefix.rfind("var ") {
+                        // Insert before `var`.
+                        let insert_at = line_start + var_offset;
+                        result.push_str(&remaining[..insert_at]);
+                        result.push_str(&annotation);
+                        remaining = &remaining[insert_at..];
+                    } else {
+                        // No var — insert before the require call.
+                        result.push_str(&remaining[..call_start]);
+                        result.push_str(&annotation);
+                        remaining = &remaining[call_start..];
                     }
+
+                    // Advance past the require call.
+                    let close_paren = remaining.find(')').unwrap_or(0) + 1;
+                    result.push_str(&remaining[..close_paren]);
+                    remaining = &remaining[close_paren..];
+                    continue;
                 }
             }
 
@@ -237,9 +237,7 @@ fn find_require_call(source: &str, require_names: &[String]) -> Option<(usize, u
                 && (bytes[end + 1] == b'"' || bytes[end + 1] == b'\'')
             {
                 // Verify the name isn't part of a larger identifier.
-                if end < bytes.len()
-                    && bytes[end] == b'('
-                {
+                if end < bytes.len() && bytes[end] == b'(' {
                     return Some((i, name_bytes.len()));
                 }
             }
@@ -265,9 +263,7 @@ fn extract_require_parameter_names(source: &str) -> Vec<String> {
         if let Some(paren_pos) = after_func.find('(') {
             let after_paren = &after_func[paren_pos + 1..];
             // Extract the first parameter name (up to comma or close paren).
-            let param_end = after_paren
-                .find(|c: char| c == ',' || c == ')' || c == ' ')
-                .unwrap_or(0);
+            let param_end = after_paren.find([',', ')', ' ']).unwrap_or(0);
             if param_end > 0 {
                 let param_name = &after_paren[..param_end];
                 if !param_name.is_empty()
@@ -307,12 +303,12 @@ fn build_dependency_map(source: &str) -> HashMap<String, i64> {
             let num_end = after_colon
                 .find(|c: char| !c.is_ascii_digit())
                 .unwrap_or(after_colon.len());
-            if num_end > 0 {
-                if let Ok(id) = after_colon[..num_end].parse::<i64>() {
-                    // Only include paths that look like module dependencies.
-                    if key.starts_with("./") || key.starts_with("../") {
-                        map.insert(key.to_string(), id);
-                    }
+            if num_end > 0
+                && let Ok(id) = after_colon[..num_end].parse::<i64>()
+            {
+                // Only include paths that look like module dependencies.
+                if key.starts_with("./") || key.starts_with("../") {
+                    map.insert(key.to_string(), id);
                 }
             }
         }
@@ -329,9 +325,7 @@ struct ModuleInfo {
 }
 
 /// Extract module info (dependencies) from the modules object.
-fn extract_module_info(
-    modules: &oxc_ast::ast::ObjectExpression<'_>,
-) -> HashMap<i64, ModuleInfo> {
+fn extract_module_info(modules: &oxc_ast::ast::ObjectExpression<'_>) -> HashMap<i64, ModuleInfo> {
     let mut info = HashMap::new();
 
     for property in &modules.properties {
@@ -366,9 +360,7 @@ fn extract_module_info(
 }
 
 /// Extract dependency name → module ID pairs from a dependency object.
-fn extract_dependency_map(
-    deps: &oxc_ast::ast::ObjectExpression<'_>,
-) -> Vec<(String, i64)> {
+fn extract_dependency_map(deps: &oxc_ast::ast::ObjectExpression<'_>) -> Vec<(String, i64)> {
     let mut result = Vec::new();
 
     for property in &deps.properties {
@@ -406,7 +398,7 @@ fn build_module_name_map(info: &HashMap<i64, ModuleInfo>) -> HashMap<i64, String
     }
 
     let mut name_map = HashMap::new();
-    for (&module_id, _) in info {
+    for &module_id in info.keys() {
         let name = if let Some(paths) = id_to_paths.get(&module_id) {
             // Pick the shortest path as the canonical name.
             let best_path = paths.iter().min_by_key(|p| p.len()).unwrap();
@@ -440,7 +432,13 @@ fn path_to_identifier(path: &str) -> String {
     // Replace path separators and invalid chars with underscores.
     let result: String = cleaned
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '$' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '$' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
     // Ensure it starts with a valid identifier character.
@@ -477,10 +475,7 @@ fn extract_browserify_modules<'a>(
         return None;
     }
 
-    let Some(first_arg) = call.arguments[0].as_expression() else {
-        return None;
-    };
-    let Expression::ObjectExpression(modules) = first_arg else {
+    let Expression::ObjectExpression(modules) = call.arguments[0].as_expression()? else {
         return None;
     };
 

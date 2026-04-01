@@ -47,10 +47,7 @@ pub fn replace_statement<'a>(
 
 /// Remove an expression by replacing it with `void 0` (`undefined`),
 /// cleaning up all identifier references in the removed subtree.
-pub fn remove_expression<'a>(
-    target: &mut Expression<'a>,
-    context: &mut TraverseCtx<'a, ()>,
-) {
+pub fn remove_expression<'a>(target: &mut Expression<'a>, context: &mut TraverseCtx<'a, ()>) {
     let old_references = collect_expression_references(target);
     *target = context.ast.void_0(SPAN);
     delete_all_references(&old_references, context);
@@ -58,10 +55,7 @@ pub fn remove_expression<'a>(
 
 /// Remove a statement by replacing it with an empty statement,
 /// cleaning up all identifier references in the removed subtree.
-pub fn remove_statement<'a>(
-    target: &mut Statement<'a>,
-    context: &mut TraverseCtx<'a, ()>,
-) {
+pub fn remove_statement<'a>(target: &mut Statement<'a>, context: &mut TraverseCtx<'a, ()>) {
     let old_references = collect_statement_references(target);
     *target = context.ast.statement_empty(SPAN);
     delete_all_references(&old_references, context);
@@ -361,7 +355,9 @@ mod tests {
 
     /// Find the SymbolId for a binding with the given name.
     fn find_symbol(scoping: &Scoping, name: &str) -> Option<SymbolId> {
-        scoping.symbol_ids().find(|&id| scoping.symbol_name(id) == name)
+        scoping
+            .symbol_ids()
+            .find(|&id| scoping.symbol_name(id) == name)
     }
 
     /// Count the number of resolved references to a symbol.
@@ -385,9 +381,12 @@ mod tests {
         ) {
             if matches!(expression, Expression::CallExpression(_)) {
                 let raw = context.ast.atom("42");
-                let replacement = context
-                    .ast
-                    .expression_numeric_literal(SPAN, 42.0, Some(raw), NumberBase::Decimal);
+                let replacement = context.ast.expression_numeric_literal(
+                    SPAN,
+                    42.0,
+                    Some(raw),
+                    NumberBase::Decimal,
+                );
                 replace_expression(expression, replacement, context);
             }
         }
@@ -402,12 +401,20 @@ mod tests {
         let (mut program, scoping) = parse_and_analyze(&allocator, "let x = 1; parseInt(x);");
 
         let x_symbol = find_symbol(&scoping, "x").expect("should find symbol x");
-        assert_eq!(reference_count(&scoping, x_symbol), 1, "x should have 1 reference before");
+        assert_eq!(
+            reference_count(&scoping, x_symbol),
+            1,
+            "x should have 1 reference before"
+        );
 
         let mut visitor = ReplaceCallWithLiteral;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
-        assert_eq!(reference_count(&scoping, x_symbol), 0, "x should have 0 references after");
+        assert_eq!(
+            reference_count(&scoping, x_symbol),
+            0,
+            "x should have 0 references after"
+        );
     }
 
     /// Visitor that replaces a sequence expression `(1, 2, x)` with its last
@@ -437,12 +444,20 @@ mod tests {
         let (mut program, scoping) = parse_and_analyze(&allocator, "let x = 1; (1, 2, x);");
 
         let x_symbol = find_symbol(&scoping, "x").expect("should find symbol x");
-        assert_eq!(reference_count(&scoping, x_symbol), 1, "x should have 1 reference before");
+        assert_eq!(
+            reference_count(&scoping, x_symbol),
+            1,
+            "x should have 1 reference before"
+        );
 
         let mut visitor = ReplaceSequenceWithLast;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
-        assert_eq!(reference_count(&scoping, x_symbol), 1, "x should still have 1 reference after");
+        assert_eq!(
+            reference_count(&scoping, x_symbol),
+            1,
+            "x should still have 1 reference after"
+        );
     }
 
     /// Visitor that replaces a conditional expression `cond ? a : b` with the
@@ -482,8 +497,16 @@ mod tests {
         let mut visitor = ReplaceConditionalWithConsequent;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
-        assert_eq!(reference_count(&scoping, a_symbol), 1, "a ref should be preserved");
-        assert_eq!(reference_count(&scoping, b_symbol), 0, "b ref should be cleaned up");
+        assert_eq!(
+            reference_count(&scoping, a_symbol),
+            1,
+            "a ref should be preserved"
+        );
+        assert_eq!(
+            reference_count(&scoping, b_symbol),
+            0,
+            "b ref should be cleaned up"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -516,7 +539,11 @@ mod tests {
         let mut visitor = RemoveIdentifierExpression;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
-        assert_eq!(reference_count(&scoping, x_symbol), 0, "x ref should be removed");
+        assert_eq!(
+            reference_count(&scoping, x_symbol),
+            0,
+            "x ref should be removed"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -533,7 +560,10 @@ mod tests {
             context: &mut TraverseCtx<'a, ()>,
         ) {
             if let Statement::ExpressionStatement(expression_statement) = statement {
-                if matches!(&expression_statement.expression, Expression::CallExpression(_)) {
+                if matches!(
+                    &expression_statement.expression,
+                    Expression::CallExpression(_)
+                ) {
                     remove_statement(statement, context);
                 }
             }
@@ -545,8 +575,10 @@ mod tests {
         // `foo(a, b)` contains references to `foo`, `a`, `b`.
         // Removing the statement should clean up all of them.
         let allocator = Allocator::default();
-        let (mut program, scoping) =
-            parse_and_analyze(&allocator, "let a = 1; let b = 2; function foo() {} foo(a, b);");
+        let (mut program, scoping) = parse_and_analyze(
+            &allocator,
+            "let a = 1; let b = 2; function foo() {} foo(a, b);",
+        );
 
         let a_symbol = find_symbol(&scoping, "a").expect("should find symbol a");
         let b_symbol = find_symbol(&scoping, "b").expect("should find symbol b");
@@ -579,10 +611,8 @@ mod tests {
             let Statement::IfStatement(if_stmt) = statement else {
                 return;
             };
-            let consequent = std::mem::replace(
-                &mut if_stmt.consequent,
-                context.ast.statement_empty(SPAN),
-            );
+            let consequent =
+                std::mem::replace(&mut if_stmt.consequent, context.ast.statement_empty(SPAN));
             replace_statement(statement, consequent, context);
         }
     }
@@ -603,8 +633,16 @@ mod tests {
         let mut visitor = ReplaceIfWithConsequent;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
-        assert_eq!(reference_count(&scoping, a_symbol), 1, "a ref should be preserved");
-        assert_eq!(reference_count(&scoping, b_symbol), 0, "b ref should be cleaned up");
+        assert_eq!(
+            reference_count(&scoping, a_symbol),
+            1,
+            "a ref should be preserved"
+        );
+        assert_eq!(
+            reference_count(&scoping, b_symbol),
+            0,
+            "b ref should be cleaned up"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -653,7 +691,10 @@ mod tests {
         // References should still be intact (rename_binding doesn't touch ref count).
         assert_eq!(reference_count(&scoping, symbol), 1);
         // Old name should no longer resolve.
-        assert!(find_symbol(&scoping, "_0x1").is_none(), "old name should not resolve");
+        assert!(
+            find_symbol(&scoping, "_0x1").is_none(),
+            "old name should not resolve"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -709,8 +750,7 @@ mod tests {
             if let Statement::ExpressionStatement(expr_stmt) = stmt {
                 if matches!(
                     &expr_stmt.expression,
-                    Expression::ParenthesizedExpression(_)
-                        | Expression::FunctionExpression(_)
+                    Expression::ParenthesizedExpression(_) | Expression::FunctionExpression(_)
                 ) {
                     return Some(&expr_stmt.expression);
                 }
@@ -748,8 +788,7 @@ mod tests {
     #[test]
     fn remove_statement_at_cleans_up_references() {
         let allocator = Allocator::default();
-        let (mut program, scoping) =
-            parse_and_analyze(&allocator, "let a = 1; let b = 2; b; a;");
+        let (mut program, scoping) = parse_and_analyze(&allocator, "let a = 1; let b = 2; b; a;");
 
         let a_symbol = find_symbol(&scoping, "a").expect("should find symbol a");
         let b_symbol = find_symbol(&scoping, "b").expect("should find symbol b");
@@ -759,8 +798,16 @@ mod tests {
         let mut visitor = RemoveSecondStatement;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
-        assert_eq!(reference_count(&scoping, b_symbol), 0, "b ref should be cleaned up");
-        assert_eq!(reference_count(&scoping, a_symbol), 1, "a ref should be preserved");
+        assert_eq!(
+            reference_count(&scoping, b_symbol),
+            0,
+            "b ref should be cleaned up"
+        );
+        assert_eq!(
+            reference_count(&scoping, a_symbol),
+            1,
+            "a ref should be preserved"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -792,12 +839,8 @@ mod tests {
             };
 
             let name: oxc_span::Ident<'a> = context.ast.atom("x").into();
-            let expression = context.create_bound_ident_expr(
-                SPAN,
-                name,
-                symbol_id,
-                ReferenceFlags::Read,
-            );
+            let expression =
+                context.create_bound_ident_expr(SPAN, name, symbol_id, ReferenceFlags::Read);
             let new_statement = context.ast.statement_expression(SPAN, expression);
             append_statement(statements, new_statement);
         }
@@ -852,12 +895,8 @@ mod tests {
             };
 
             let name: oxc_span::Ident<'a> = context.ast.atom("x").into();
-            let replacement = context.create_bound_ident_expr(
-                SPAN,
-                name,
-                symbol_id,
-                ReferenceFlags::Read,
-            );
+            let replacement =
+                context.create_bound_ident_expr(SPAN, name, symbol_id, ReferenceFlags::Read);
             replace_expression(expression, replacement, context);
         }
     }
@@ -868,7 +907,11 @@ mod tests {
         let (mut program, scoping) = parse_and_analyze(&allocator, "let x = 1; 42;");
 
         let x_symbol = find_symbol(&scoping, "x").expect("should find symbol x");
-        assert_eq!(reference_count(&scoping, x_symbol), 0, "x should start with 0 references");
+        assert_eq!(
+            reference_count(&scoping, x_symbol),
+            0,
+            "x should start with 0 references"
+        );
 
         let mut visitor = ReplaceLiteralWithReference;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
@@ -922,8 +965,20 @@ mod tests {
         let mut visitor = ReplaceBinaryWithZero;
         let scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
-        assert_eq!(reference_count(&scoping, a_symbol), 0, "a refs should be cleaned up");
-        assert_eq!(reference_count(&scoping, b_symbol), 0, "b refs should be cleaned up");
-        assert_eq!(reference_count(&scoping, c_symbol), 0, "c refs should be cleaned up");
+        assert_eq!(
+            reference_count(&scoping, a_symbol),
+            0,
+            "a refs should be cleaned up"
+        );
+        assert_eq!(
+            reference_count(&scoping, b_symbol),
+            0,
+            "b refs should be cleaned up"
+        );
+        assert_eq!(
+            reference_count(&scoping, c_symbol),
+            0,
+            "c refs should be cleaned up"
+        );
     }
 }

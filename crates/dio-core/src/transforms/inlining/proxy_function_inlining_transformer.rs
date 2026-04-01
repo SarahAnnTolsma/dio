@@ -149,37 +149,33 @@ impl ProxyFunctionInliningTransformer {
         }
 
         // Pattern 2: Binary — `function f(a, b) { return a <op> b; }` or swapped
-        if param_count == 2 {
-            if let Expression::BinaryExpression(binary) = return_expression {
-                let left = unwrap_parens(&binary.left);
-                let right = unwrap_parens(&binary.right);
+        if param_count == 2
+            && let Expression::BinaryExpression(binary) = return_expression
+        {
+            let left = unwrap_parens(&binary.left);
+            let right = unwrap_parens(&binary.right);
 
-                if let (Expression::Identifier(left_id), Expression::Identifier(right_id)) =
-                    (left, right)
-                {
-                    // Check both orderings: (param[0] op param[1]) and (param[1] op param[0])
-                    for (left_index, right_index) in [(0, 1), (1, 0)] {
-                        if is_parameter_reference(
-                            left_id,
-                            scope_id,
-                            left_index,
-                            &params.items,
-                            context,
-                        ) && is_parameter_reference(
+            if let (Expression::Identifier(left_id), Expression::Identifier(right_id)) =
+                (left, right)
+            {
+                // Check both orderings: (param[0] op param[1]) and (param[1] op param[0])
+                for (left_index, right_index) in [(0, 1), (1, 0)] {
+                    if is_parameter_reference(left_id, scope_id, left_index, &params.items, context)
+                        && is_parameter_reference(
                             right_id,
                             scope_id,
                             right_index,
                             &params.items,
                             context,
-                        ) {
-                            return Some(ProxyFunction {
-                                kind: ProxyKind::Binary {
-                                    operator: binary.operator,
-                                    left_param_index: left_index,
-                                    right_param_index: right_index,
-                                },
-                            });
-                        }
+                        )
+                    {
+                        return Some(ProxyFunction {
+                            kind: ProxyKind::Binary {
+                                operator: binary.operator,
+                                left_param_index: left_index,
+                                right_param_index: right_index,
+                            },
+                        });
                     }
                 }
             }
@@ -187,55 +183,44 @@ impl ProxyFunctionInliningTransformer {
 
         // Pattern 3: Call forwarding — `function f(callee, a, b, ...) { return callee(a, b, ...); }`
         if param_count >= 1
-            && let Expression::CallExpression(call) = return_expression {
-                let callee = unwrap_parens(&call.callee);
-                if let Expression::Identifier(callee_id) = callee
-                    && is_parameter_reference(callee_id, scope_id, 0, &params.items, context) {
-                        // All call arguments must reference the remaining parameters in order.
-                        let forwarded_argument_count = call.arguments.len();
-                        if forwarded_argument_count == param_count - 1 {
-                            let all_match = call
-                                .arguments
-                                .iter()
-                                .enumerate()
-                                .all(|(index, argument)| {
-                                    if argument.is_spread() {
-                                        return false;
-                                    }
-                                    let Some(expression) = argument.as_expression() else {
-                                        return false;
-                                    };
-                                    let expression = unwrap_parens(expression);
-                                    if let Expression::Identifier(id) = expression {
-                                        is_parameter_reference(
-                                            id,
-                                            scope_id,
-                                            index + 1,
-                                            &params.items,
-                                            context,
-                                        )
-                                    } else {
-                                        false
-                                    }
-                                });
-
-                            if all_match {
-                                return Some(ProxyFunction {
-                                    kind: ProxyKind::CallForwarding(forwarded_argument_count),
-                                });
-                            }
+            && let Expression::CallExpression(call) = return_expression
+        {
+            let callee = unwrap_parens(&call.callee);
+            if let Expression::Identifier(callee_id) = callee
+                && is_parameter_reference(callee_id, scope_id, 0, &params.items, context)
+            {
+                // All call arguments must reference the remaining parameters in order.
+                let forwarded_argument_count = call.arguments.len();
+                if forwarded_argument_count == param_count - 1 {
+                    let all_match = call.arguments.iter().enumerate().all(|(index, argument)| {
+                        if argument.is_spread() {
+                            return false;
                         }
+                        let Some(expression) = argument.as_expression() else {
+                            return false;
+                        };
+                        let expression = unwrap_parens(expression);
+                        if let Expression::Identifier(id) = expression {
+                            is_parameter_reference(id, scope_id, index + 1, &params.items, context)
+                        } else {
+                            false
+                        }
+                    });
+
+                    if all_match {
+                        return Some(ProxyFunction {
+                            kind: ProxyKind::CallForwarding(forwarded_argument_count),
+                        });
                     }
+                }
             }
+        }
 
         None
     }
 
     /// Check whether all references to a symbol are direct callee positions.
-    fn all_references_are_callees(
-        symbol_id: SymbolId,
-        context: &TraverseCtx<'_, ()>,
-    ) -> bool {
+    fn all_references_are_callees(symbol_id: SymbolId, context: &TraverseCtx<'_, ()>) -> bool {
         let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
         if reference_ids.is_empty() {
             return false; // No references → nothing to inline.
@@ -327,9 +312,10 @@ impl Transformer for ProxyFunctionInliningTransformer {
 
             // Must not be reassigned.
             if Self::all_references_are_callees(symbol_id, context)
-                && let Some(proxy) = Self::classify_proxy(function, context) {
-                    proxies.insert(symbol_id, proxy);
-                }
+                && let Some(proxy) = Self::classify_proxy(function, context)
+            {
+                proxies.insert(symbol_id, proxy);
+            }
         }
 
         if proxies.is_empty() {
@@ -345,10 +331,11 @@ impl Transformer for ProxyFunctionInliningTransformer {
 
             if let Some(binding) = &function.id
                 && let Some(symbol_id) = binding.symbol_id.get()
-                    && proxies.contains_key(&symbol_id) {
-                        operations::remove_statement_at(statements, index, context);
-                        changed = true;
-                    }
+                && proxies.contains_key(&symbol_id)
+            {
+                operations::remove_statement_at(statements, index, context);
+                changed = true;
+            }
         }
 
         changed
@@ -430,8 +417,7 @@ impl Transformer for ProxyFunctionInliningTransformer {
                 } else {
                     (max_expr, min_expr)
                 };
-                let replacement =
-                    context.ast.expression_binary(SPAN, left, operator, right);
+                let replacement = context.ast.expression_binary(SPAN, left, operator, right);
                 operations::replace_expression(expression, replacement, context);
                 true
             }
@@ -446,8 +432,7 @@ impl Transformer for ProxyFunctionInliningTransformer {
                 }
 
                 let new_callee = arguments.remove(0).into_expression();
-                let mut forwarded_arguments =
-                    context.ast.vec_with_capacity(arguments.len());
+                let mut forwarded_arguments = context.ast.vec_with_capacity(arguments.len());
                 for argument in arguments {
                     forwarded_arguments.push(argument);
                 }

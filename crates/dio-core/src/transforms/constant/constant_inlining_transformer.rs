@@ -112,9 +112,9 @@ impl ConstantInliningTransformer {
     /// Check whether a symbol has any write references (assignments, updates, etc.).
     fn has_write_references(symbol_id: SymbolId, context: &TraverseCtx<'_, ()>) -> bool {
         let reference_ids = context.scoping().get_resolved_reference_ids(symbol_id);
-        reference_ids.iter().any(|&reference_id| {
-            context.scoping().get_reference(reference_id).is_write()
-        })
+        reference_ids
+            .iter()
+            .any(|&reference_id| context.scoping().get_reference(reference_id).is_write())
     }
 
     /// Extract a `ConstantValue` from a literal expression, if possible.
@@ -131,9 +131,10 @@ impl ConstantInliningTransformer {
                 if unary.operator == oxc_syntax::operator::UnaryOperator::Void =>
             {
                 if let Expression::NumericLiteral(literal) = &unary.argument
-                    && literal.value == 0.0 {
-                        return Some(ConstantValue::Undefined);
-                    }
+                    && literal.value == 0.0
+                {
+                    return Some(ConstantValue::Undefined);
+                }
                 None
             }
             _ => None,
@@ -175,9 +176,7 @@ impl ConstantInliningTransformer {
                 let value = context.ast.atom(string);
                 context.ast.expression_string_literal(SPAN, value, None)
             }
-            ConstantValue::Boolean(value) => {
-                context.ast.expression_boolean_literal(SPAN, *value)
-            }
+            ConstantValue::Boolean(value) => context.ast.expression_boolean_literal(SPAN, *value),
             ConstantValue::Null => context.ast.expression_null_literal(SPAN),
             ConstantValue::Undefined => context.ast.void_0(SPAN),
         }
@@ -227,20 +226,23 @@ impl Transformer for ConstantInliningTransformer {
                     Self::scan_declaration(declaration, &mut constants, context);
                 }
                 Statement::ForStatement(for_statement) => {
-                    if let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(
-                        declaration,
-                    )) = &for_statement.init
+                    if let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(declaration)) =
+                        &for_statement.init
                     {
                         Self::scan_declaration(declaration, &mut constants, context);
                     }
                 }
                 Statement::ForInStatement(for_in) => {
-                    if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(declaration) = &for_in.left {
+                    if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(declaration) =
+                        &for_in.left
+                    {
                         Self::scan_declaration(declaration, &mut constants, context);
                     }
                 }
                 Statement::ForOfStatement(for_of) => {
-                    if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(declaration) = &for_of.left {
+                    if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(declaration) =
+                        &for_of.left
+                    {
                         Self::scan_declaration(declaration, &mut constants, context);
                     }
                 }
@@ -272,7 +274,7 @@ impl Transformer for ConstantInliningTransformer {
                             if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
                                 &declarator.id
                                 && let Some(symbol_id) = binding.symbol_id.get()
-                                    && constants.contains_key(&symbol_id)
+                                && constants.contains_key(&symbol_id)
                             {
                                 symbols_to_remove.push(symbol_id);
                             }
@@ -281,7 +283,9 @@ impl Transformer for ConstantInliningTransformer {
                         changed = true;
                     }
                 }
-                Statement::ForStatement(_) | Statement::ForInStatement(_) | Statement::ForOfStatement(_) => {
+                Statement::ForStatement(_)
+                | Statement::ForInStatement(_)
+                | Statement::ForOfStatement(_) => {
                     // For for-init declarations, null out the initializers of
                     // inlined constants. The unused variable transformer will
                     // clean up the empty declarators later.
@@ -302,16 +306,13 @@ impl Transformer for ConstantInliningTransformer {
                         for declarator in declaration.declarations.iter_mut() {
                             if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) =
                                 &declarator.id
+                                && let Some(symbol_id) = binding.symbol_id.get()
+                                && constants.contains_key(&symbol_id)
+                                && declarator.init.is_some()
                             {
-                                if let Some(symbol_id) = binding.symbol_id.get() {
-                                    if constants.contains_key(&symbol_id)
-                                        && declarator.init.is_some()
-                                    {
-                                        declarator.init = None;
-                                        symbols_to_remove.push(symbol_id);
-                                        changed = true;
-                                    }
-                                }
+                                declarator.init = None;
+                                symbols_to_remove.push(symbol_id);
+                                changed = true;
                             }
                         }
                     }

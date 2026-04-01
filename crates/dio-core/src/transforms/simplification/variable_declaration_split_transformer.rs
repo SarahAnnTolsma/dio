@@ -82,22 +82,28 @@ impl Transformer for VariableDeclarationSplitTransformer {
             let first = iter.next().unwrap();
             let mut single_declarations = context.ast.vec_with_capacity(1);
             single_declarations.push(first);
-            statements[index] = Statement::VariableDeclaration(context.ast.alloc(
-                context
-                    .ast
-                    .variable_declaration(SPAN, kind, single_declarations, false),
-            ));
+            statements[index] = Statement::VariableDeclaration(
+                context.ast.alloc(context.ast.variable_declaration(
+                    SPAN,
+                    kind,
+                    single_declarations,
+                    false,
+                )),
+            );
 
             // Insert remaining declarators after the first.
             let mut insert_position = index + 1;
             for declarator in iter {
                 let mut single_declarations = context.ast.vec_with_capacity(1);
                 single_declarations.push(declarator);
-                let new_statement = Statement::VariableDeclaration(context.ast.alloc(
-                    context
-                        .ast
-                        .variable_declaration(SPAN, kind, single_declarations, false),
-                ));
+                let new_statement = Statement::VariableDeclaration(
+                    context.ast.alloc(context.ast.variable_declaration(
+                        SPAN,
+                        kind,
+                        single_declarations,
+                        false,
+                    )),
+                );
                 statements.insert(insert_position, new_statement);
                 insert_position += 1;
             }

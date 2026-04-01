@@ -88,22 +88,21 @@ impl Transformer for BuiltinEvaluationTransformer {
 fn is_static_member_call(callee: &Expression<'_>, object_name: &str, method_name: &str) -> bool {
     if let Expression::StaticMemberExpression(member) = callee
         && member.property.name.as_str() == method_name
-            && let Expression::Identifier(identifier) = &member.object {
-                return identifier.name.as_str() == object_name;
-            }
+        && let Expression::Identifier(identifier) = &member.object
+    {
+        return identifier.name.as_str() == object_name;
+    }
     false
 }
 
 /// If the callee is `ObjectName.methodName`, return the method name.
-fn get_static_member_method<'a>(
-    callee: &'a Expression<'_>,
-    object_name: &str,
-) -> Option<&'a str> {
+fn get_static_member_method<'a>(callee: &'a Expression<'_>, object_name: &str) -> Option<&'a str> {
     if let Expression::StaticMemberExpression(member) = callee
         && let Expression::Identifier(identifier) = &member.object
-            && identifier.name.as_str() == object_name {
-                return Some(member.property.name.as_str());
-            }
+        && identifier.name.as_str() == object_name
+    {
+        return Some(member.property.name.as_str());
+    }
     None
 }
 
@@ -172,10 +171,12 @@ fn try_evaluate_parse_int<'a>(
         let result = truncated as i64;
         let result_f64 = result as f64;
         let raw = context.ast.atom(&result.to_string());
-        let replacement =
-            context
-                .ast
-                .expression_numeric_literal(SPAN, result_f64, Some(raw), NumberBase::Decimal);
+        let replacement = context.ast.expression_numeric_literal(
+            SPAN,
+            result_f64,
+            Some(raw),
+            NumberBase::Decimal,
+        );
         operations::replace_expression(expression, replacement, context);
         return true;
     }
@@ -515,15 +516,14 @@ fn try_evaluate_math_method<'a>(
             result
         }
         // Multi-argument methods.
-        "min" if !numeric_arguments.is_empty() => {
-            numeric_arguments.iter().copied().fold(f64::INFINITY, f64::min)
-        }
-        "max" if !numeric_arguments.is_empty() => {
-            numeric_arguments
-                .iter()
-                .copied()
-                .fold(f64::NEG_INFINITY, f64::max)
-        }
+        "min" if !numeric_arguments.is_empty() => numeric_arguments
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min),
+        "max" if !numeric_arguments.is_empty() => numeric_arguments
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max),
         "pow" if numeric_arguments.len() == 2 => {
             let result = numeric_arguments[0].powf(numeric_arguments[1]);
             if !result.is_finite() {

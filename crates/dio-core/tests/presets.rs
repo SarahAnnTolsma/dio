@@ -27,7 +27,10 @@ fn generic_preset_matches_default() {
 
 #[test]
 fn obfuscator_io_folds_constants() {
-    assert_eq!(deobfuscate_with(Preset::ObfuscatorIo, "var x = 1 + 2; f(x);"), "f(3);");
+    assert_eq!(
+        deobfuscate_with(Preset::ObfuscatorIo, "var x = 1 + 2; f(x);"),
+        "f(3);"
+    );
 }
 
 #[test]
@@ -47,17 +50,26 @@ fn obfuscator_io_inlines_proxy_functions() {
 
 #[test]
 fn jsfuck_folds_coercion() {
-    assert_eq!(deobfuscate_with(Preset::JsFuck, "var x = +[];"), "var x = 0;");
+    assert_eq!(
+        deobfuscate_with(Preset::JsFuck, "var x = +[];"),
+        "var x = 0;"
+    );
 }
 
 #[test]
 fn jsfuck_double_not_array() {
-    assert_eq!(deobfuscate_with(Preset::JsFuck, "var x = !![];"), "var x = true;");
+    assert_eq!(
+        deobfuscate_with(Preset::JsFuck, "var x = !![];"),
+        "var x = true;"
+    );
 }
 
 #[test]
 fn jsfuck_plus_true() {
-    assert_eq!(deobfuscate_with(Preset::JsFuck, "var x = +!![];"), "var x = 1;");
+    assert_eq!(
+        deobfuscate_with(Preset::JsFuck, "var x = +!![];"),
+        "var x = 1;"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -68,8 +80,14 @@ fn jsfuck_plus_true() {
 fn preset_from_name_valid() {
     assert_eq!(Preset::from_name("generic"), Some(Preset::Generic));
     assert_eq!(Preset::from_name("default"), Some(Preset::Generic));
-    assert_eq!(Preset::from_name("obfuscator-io"), Some(Preset::ObfuscatorIo));
-    assert_eq!(Preset::from_name("obfuscator_io"), Some(Preset::ObfuscatorIo));
+    assert_eq!(
+        Preset::from_name("obfuscator-io"),
+        Some(Preset::ObfuscatorIo)
+    );
+    assert_eq!(
+        Preset::from_name("obfuscator_io"),
+        Some(Preset::ObfuscatorIo)
+    );
     assert_eq!(
         Preset::from_name("javascript-obfuscator"),
         Some(Preset::ObfuscatorIo)
@@ -82,7 +100,10 @@ fn preset_from_name_valid() {
 #[test]
 fn preset_from_name_case_insensitive() {
     assert_eq!(Preset::from_name("JsFuck"), Some(Preset::JsFuck));
-    assert_eq!(Preset::from_name("OBFUSCATOR-IO"), Some(Preset::ObfuscatorIo));
+    assert_eq!(
+        Preset::from_name("OBFUSCATOR-IO"),
+        Some(Preset::ObfuscatorIo)
+    );
     assert_eq!(Preset::from_name("Generic"), Some(Preset::Generic));
 }
 
@@ -100,6 +121,9 @@ fn preset_from_name_unknown() {
 fn add_transformers_to_empty() {
     let mut deobfuscator = Deobfuscator::empty();
     deobfuscator.add_transformers(dio_core::obfuscator_io_transformers());
-    let result = deobfuscator.deobfuscate("var x = 1 + 2; f(x);").trim().to_string();
+    let result = deobfuscator
+        .deobfuscate("var x = 1 + 2; f(x);")
+        .trim()
+        .to_string();
     assert_eq!(result, "f(3);");
 }

@@ -5,42 +5,27 @@ use common::deobfuscate;
 
 #[test]
 fn merge_numeric_assignment() {
-    assert_eq!(
-        deobfuscate("var x; x = 42; f(x);"),
-        "f(42);"
-    );
+    assert_eq!(deobfuscate("var x; x = 42; f(x);"), "f(42);");
 }
 
 #[test]
 fn merge_negative_numeric() {
-    assert_eq!(
-        deobfuscate("var x; x = -418; f(x);"),
-        "f(-418);"
-    );
+    assert_eq!(deobfuscate("var x; x = -418; f(x);"), "f(-418);");
 }
 
 #[test]
 fn merge_string_assignment() {
-    assert_eq!(
-        deobfuscate("var s; s = \"hello\"; f(s);"),
-        "f(\"hello\");"
-    );
+    assert_eq!(deobfuscate("var s; s = \"hello\"; f(s);"), "f(\"hello\");");
 }
 
 #[test]
 fn merge_boolean_assignment() {
-    assert_eq!(
-        deobfuscate("var b; b = true; f(b);"),
-        "f(true);"
-    );
+    assert_eq!(deobfuscate("var b; b = true; f(b);"), "f(true);");
 }
 
 #[test]
 fn merge_null_assignment() {
-    assert_eq!(
-        deobfuscate("var n; n = null; f(n);"),
-        "f(null);"
-    );
+    assert_eq!(deobfuscate("var n; n = null; f(n);"), "f(null);");
 }
 
 #[test]
@@ -72,17 +57,11 @@ fn skip_multiple_writes() {
 #[test]
 fn skip_already_initialized() {
     // Already initialized declarations should not be merged.
-    assert_eq!(
-        deobfuscate("var x = 1; f(x);"),
-        "f(1);"
-    );
+    assert_eq!(deobfuscate("var x = 1; f(x);"), "f(1);");
 }
 
 #[test]
 fn non_adjacent_merge() {
     // Assignment doesn't have to be immediately after the declaration.
-    assert_eq!(
-        deobfuscate("var x; f(); x = 5; g(x);"),
-        "f();\ng(5);"
-    );
+    assert_eq!(deobfuscate("var x; f(); x = 5; g(x);"), "f();\ng(5);");
 }

@@ -9,10 +9,7 @@ use common::deobfuscate;
 
 #[test]
 fn inline_numeric_constant() {
-    assert_eq!(
-        deobfuscate("var x = 5; console.log(x);"),
-        "console.log(5);"
-    );
+    assert_eq!(deobfuscate("var x = 5; console.log(x);"), "console.log(5);");
 }
 
 #[test]
@@ -25,10 +22,7 @@ fn inline_string_constant() {
 
 #[test]
 fn inline_boolean_constant() {
-    assert_eq!(
-        deobfuscate("var flag = true; if (flag) { x(); }"),
-        "x();"
-    );
+    assert_eq!(deobfuscate("var flag = true; if (flag) { x(); }"), "x();");
 }
 
 #[test]
@@ -45,10 +39,7 @@ fn inline_null_constant() {
 
 #[test]
 fn inline_multiple_references() {
-    assert_eq!(
-        deobfuscate("var x = 42; f(x); g(x);"),
-        "f(42);\ng(42);"
-    );
+    assert_eq!(deobfuscate("var x = 42; f(x); g(x);"), "f(42);\ng(42);");
 }
 
 // ---------------------------------------------------------------------------

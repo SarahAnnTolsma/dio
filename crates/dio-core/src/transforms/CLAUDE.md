@@ -18,6 +18,7 @@ Each transformer is grouped by category and implements the `Transformer` trait f
 
 - `obfuscator_io/` — Obfuscator.io-specific transforms: string array decoding (atob, custom base64, RC4), string array rotation, control flow array flattening. Only enabled via the `ObfuscatorIo` or `DataDome` presets.
 - `datadome/` — DataDome-specific transforms: `setTimeout(..., 0)` unwrapping. Only enabled via the `DataDome` preset.
+- `debundler/` — Module bundle annotation: Browserify module naming and JSDoc type comments. Only enabled via the `Debundler` preset.
 
 ## Conventions
 

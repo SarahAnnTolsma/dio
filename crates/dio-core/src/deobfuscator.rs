@@ -35,6 +35,7 @@ pub struct Deobfuscator {
     max_iterations: usize,
 
     /// Optional callback invoked with diagnostics after deobfuscation.
+    #[allow(clippy::type_complexity)]
     diagnostics_callback: Option<Box<dyn Fn(&TransformDiagnostics) + Send + Sync>>,
 
     /// Code generation options (indentation, semicolons, etc.).
@@ -155,13 +156,7 @@ impl Deobfuscator {
                         changed: false,
                     };
 
-                    scoping = traverse_mut(
-                        &mut visitor,
-                        &allocator,
-                        &mut program,
-                        scoping,
-                        (),
-                    );
+                    scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
                     visitor.changed
                 };
@@ -181,13 +176,7 @@ impl Deobfuscator {
                     changed: false,
                 };
 
-                scoping = traverse_mut(
-                    &mut visitor,
-                    &allocator,
-                    &mut program,
-                    scoping,
-                    (),
-                );
+                scoping = traverse_mut(&mut visitor, &allocator, &mut program, scoping, ());
 
                 visitor.changed
             };

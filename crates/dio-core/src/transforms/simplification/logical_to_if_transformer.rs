@@ -68,7 +68,11 @@ impl Transformer for LogicalToIfTransformer {
             LogicalOperator::And => left,
             LogicalOperator::Or => {
                 // Wrap the left side in a unary `!` expression.
-                context.ast.expression_unary(SPAN, oxc_syntax::operator::UnaryOperator::LogicalNot, left)
+                context.ast.expression_unary(
+                    SPAN,
+                    oxc_syntax::operator::UnaryOperator::LogicalNot,
+                    left,
+                )
             }
             _ => return false,
         };

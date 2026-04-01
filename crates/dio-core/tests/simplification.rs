@@ -31,7 +31,10 @@ fn block_normalization_else_if_preserved() {
 
 #[test]
 fn block_normalization_while() {
-    assert_eq!(deobfuscate("while (x) foo();"), "while (x) {\n    foo();\n}");
+    assert_eq!(
+        deobfuscate("while (x) foo();"),
+        "while (x) {\n    foo();\n}"
+    );
 }
 
 #[test]
@@ -142,12 +145,18 @@ fn comma_simplification() {
 
 #[test]
 fn comma_with_identifiers() {
-    assert_eq!(deobfuscate("var a = 1; var x = (a, 2, 3); f(x);"), "var x = 3;\nf(x);");
+    assert_eq!(
+        deobfuscate("var a = 1; var x = (a, 2, 3); f(x);"),
+        "var x = 3;\nf(x);"
+    );
 }
 
 #[test]
 fn comma_nested() {
-    assert_eq!(deobfuscate("var x = (0, 0, 0, 42); f(x);"), "var x = 42;\nf(x);");
+    assert_eq!(
+        deobfuscate("var x = (0, 0, 0, 42); f(x);"),
+        "var x = 42;\nf(x);"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -204,10 +213,7 @@ fn sequence_while() {
 
 #[test]
 fn sequence_throw() {
-    assert_eq!(
-        deobfuscate("throw (a(), b(), c);"),
-        "a();\nb();\nthrow c;"
-    );
+    assert_eq!(deobfuscate("throw (a(), b(), c);"), "a();\nb();\nthrow c;");
 }
 
 #[test]
@@ -232,10 +238,7 @@ fn sequence_for_test() {
 
 #[test]
 fn sequence_expression_statement() {
-    assert_eq!(
-        deobfuscate("(a(), b(), c());"),
-        "a();\nb();\nc();"
-    );
+    assert_eq!(deobfuscate("(a(), b(), c());"), "a();\nb();\nc();");
 }
 
 #[test]
@@ -262,18 +265,12 @@ fn variable_declaration_split_var() {
 
 #[test]
 fn variable_declaration_split_let() {
-    assert_eq!(
-        deobfuscate("let a = 1, b = 2; f(a, b);"),
-        "f(1, 2);"
-    );
+    assert_eq!(deobfuscate("let a = 1, b = 2; f(a, b);"), "f(1, 2);");
 }
 
 #[test]
 fn variable_declaration_split_const() {
-    assert_eq!(
-        deobfuscate("const a = 1, b = 2; f(a, b);"),
-        "f(1, 2);"
-    );
+    assert_eq!(deobfuscate("const a = 1, b = 2; f(a, b);"), "f(1, 2);");
 }
 
 #[test]
@@ -289,10 +286,7 @@ fn variable_declaration_split_no_init() {
 
 #[test]
 fn variable_declaration_split_mixed_init() {
-    assert_eq!(
-        deobfuscate("var a = 1, b, c = 3; f(a, c);"),
-        "f(1, 3);"
-    );
+    assert_eq!(deobfuscate("var a = 1, b, c = 3; f(a, c);"), "f(1, 3);");
 }
 
 // ---------------------------------------------------------------------------
@@ -306,13 +300,19 @@ fn member_computed_to_dot() {
 
 #[test]
 fn member_keeps_invalid_identifier() {
-    assert_eq!(deobfuscate("obj[\"hello world\"];"), "obj[\"hello world\"];");
+    assert_eq!(
+        deobfuscate("obj[\"hello world\"];"),
+        "obj[\"hello world\"];"
+    );
 }
 
 #[test]
 fn member_converts_reserved_word() {
     // Reserved words are valid as property names in ES5+.
-    assert_eq!(deobfuscate("f(obj[\"class\"]); g(obj[\"catch\"]);"), "f(obj.class);\ng(obj.catch);");
+    assert_eq!(
+        deobfuscate("f(obj[\"class\"]); g(obj[\"catch\"]);"),
+        "f(obj.class);\ng(obj.catch);"
+    );
 }
 
 #[test]
@@ -330,8 +330,5 @@ fn member_assignment_lhs() {
 
 #[test]
 fn member_assignment_lhs_simple() {
-    assert_eq!(
-        deobfuscate("obj[\"foo\"] = 1;"),
-        "obj.foo = 1;"
-    );
+    assert_eq!(deobfuscate("obj[\"foo\"] = 1;"), "obj.foo = 1;");
 }

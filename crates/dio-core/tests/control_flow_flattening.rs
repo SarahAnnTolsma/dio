@@ -92,10 +92,7 @@ fn linearize_terminal_return() {
         !result.contains("switch"),
         "Expected switch to be removed: {result}"
     );
-    assert!(
-        result.contains("return n + 1"),
-        "Expected return: {result}"
-    );
+    assert!(result.contains("return n + 1"), "Expected return: {result}");
 }
 
 #[test]

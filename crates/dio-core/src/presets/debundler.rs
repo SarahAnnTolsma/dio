@@ -8,8 +8,5 @@ use crate::transforms;
 
 /// Returns transformers for debundling.
 pub fn transformers() -> Vec<Box<dyn Transformer>> {
-    vec![
-        Box::new(transforms::debundler::BrowserifyAnnotationTransformer)
-            as Box<dyn Transformer>,
-    ]
+    vec![Box::new(transforms::debundler::BrowserifyAnnotationTransformer) as Box<dyn Transformer>]
 }
