@@ -10,8 +10,10 @@ use crate::transforms;
 
 /// Returns transformers targeting Akamai Bot Manager scripts.
 pub fn transformers() -> Vec<Box<dyn Transformer>> {
-    let mut result =
-        vec![Box::new(transforms::akamai::InitializerInliningTransformer) as Box<dyn Transformer>];
+    let mut result: Vec<Box<dyn Transformer>> = vec![
+        Box::new(transforms::akamai::InitializerInliningTransformer),
+        Box::new(transforms::akamai::SwitchDispatchTransformer::default()),
+    ];
 
     // Include all general-purpose transforms.
     result.extend(transforms::default_transformers());
