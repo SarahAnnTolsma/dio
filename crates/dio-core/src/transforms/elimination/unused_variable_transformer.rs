@@ -148,6 +148,25 @@ impl Transformer for UnusedVariableTransformer {
                     }
                     changed = true;
                 }
+                Statement::FunctionDeclaration(function) => {
+                    // Remove function declarations with zero references, but only
+                    // if they're in a nested scope (not the program top level).
+                    // Top-level functions may be exports or API entry points.
+                    if let Some(binding) = &function.id
+                        && let Some(symbol_id) = binding.symbol_id.get()
+                    {
+                        let scope_id = context.scoping().symbol_scope_id(symbol_id);
+                        let is_top_level = scope_id == context.scoping().root_scope_id();
+                        if !is_top_level {
+                            let references =
+                                context.scoping().get_resolved_reference_ids(symbol_id);
+                            if references.is_empty() {
+                                operations::remove_statement_at(statements, index, context);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
