@@ -61,6 +61,68 @@ impl Transformer for ConstantFoldingTransformer {
 }
 
 /// Helper: create a numeric literal expression.
+/// Try to coerce an expression to a numeric value for arithmetic folding.
+/// Handles NumericLiteral, BooleanLiteral (true→1, false→0), and NullLiteral (→0).
+fn coerce_to_number(expression: &Expression<'_>) -> Option<f64> {
+    match expression {
+        Expression::NumericLiteral(number) => Some(number.value),
+        Expression::BooleanLiteral(boolean) => Some(if boolean.value { 1.0 } else { 0.0 }),
+        Expression::NullLiteral(_) => Some(0.0),
+        _ => None,
+    }
+}
+
+/// Coerce an array expression to its string representation (for JSFuck patterns).
+/// `[]` → `""`, `[1]` → `"1"`, `[1,2]` → `"1,2"`.
+/// Only handles arrays of literal elements.
+fn coerce_array_to_string(expression: &Expression<'_>) -> Option<String> {
+    let Expression::ArrayExpression(array) = expression else {
+        return None;
+    };
+
+    let mut parts = Vec::new();
+    for element in &array.elements {
+        let expr = element.as_expression()?;
+        match expr {
+            Expression::NumericLiteral(n) => {
+                if n.value.fract() == 0.0 && n.value.abs() < (i64::MAX as f64) {
+                    parts.push(format!("{}", n.value as i64));
+                } else {
+                    parts.push(n.value.to_string());
+                }
+            }
+            Expression::StringLiteral(s) => parts.push(s.value.to_string()),
+            Expression::BooleanLiteral(b) => {
+                parts.push(if b.value { "true" } else { "false" }.to_string());
+            }
+            Expression::NullLiteral(_) => parts.push(String::new()),
+            _ => return None,
+        }
+    }
+
+    Some(parts.join(","))
+}
+
+/// Coerce an expression to a number, supporting strings, booleans, null, and empty arrays.
+/// Used for subtraction/multiplication where JS coerces operands to numbers.
+fn coerce_to_number_from_string_or_literal(expression: &Expression<'_>) -> Option<f64> {
+    match expression {
+        Expression::NumericLiteral(n) => Some(n.value),
+        Expression::BooleanLiteral(b) => Some(if b.value { 1.0 } else { 0.0 }),
+        Expression::NullLiteral(_) => Some(0.0),
+        Expression::StringLiteral(s) => {
+            let trimmed = s.value.as_str().trim();
+            if trimmed.is_empty() {
+                Some(0.0)
+            } else {
+                trimmed.parse::<f64>().ok()
+            }
+        }
+        Expression::ArrayExpression(array) if array.elements.is_empty() => Some(0.0),
+        _ => None,
+    }
+}
+
 fn make_numeric_literal<'a>(context: &TraverseCtx<'a, ()>, value: f64) -> Expression<'a> {
     let raw = context.ast.atom(&value.to_string());
     context
@@ -83,27 +145,32 @@ fn try_fold_binary_expression<'a>(
         return false;
     };
 
-    // Try numeric folding: both sides are numeric literals (looking through parens).
-    if let (Expression::NumericLiteral(left), Expression::NumericLiteral(right)) =
-        (unwrap_parens(&binary.left), unwrap_parens(&binary.right))
-    {
-        let left_value = left.value;
-        let right_value = right.value;
+    // Try numeric folding: both sides coerce to numbers (numeric literals,
+    // boolean literals, or null). In JavaScript, `true` → 1, `false` → 0,
+    // `null` → 0 in arithmetic contexts.
+    // Note: for Addition, we only coerce if at least one operand is numeric
+    // (otherwise `true + true` stays as-is since JS returns 2 but the intent
+    // may be boolean). However `1 + true` → 2 is safe.
+    if let (Some(left_value), Some(right_value)) = (
+        coerce_to_number(unwrap_parens(&binary.left)),
+        coerce_to_number(unwrap_parens(&binary.right)),
+    ) {
+        {
+            let result = match binary.operator {
+                BinaryOperator::Addition => Some(left_value + right_value),
+                BinaryOperator::Subtraction => Some(left_value - right_value),
+                BinaryOperator::Multiplication => Some(left_value * right_value),
+                BinaryOperator::Division if right_value != 0.0 => Some(left_value / right_value),
+                BinaryOperator::Remainder if right_value != 0.0 => Some(left_value % right_value),
+                BinaryOperator::Exponential => Some(left_value.powf(right_value)),
+                _ => None,
+            };
 
-        let result = match binary.operator {
-            BinaryOperator::Addition => Some(left_value + right_value),
-            BinaryOperator::Subtraction => Some(left_value - right_value),
-            BinaryOperator::Multiplication => Some(left_value * right_value),
-            BinaryOperator::Division if right_value != 0.0 => Some(left_value / right_value),
-            BinaryOperator::Remainder if right_value != 0.0 => Some(left_value % right_value),
-            BinaryOperator::Exponential => Some(left_value.powf(right_value)),
-            _ => None,
-        };
-
-        if let Some(result_value) = result {
-            let replacement = make_numeric_literal(context, result_value);
-            operations::replace_expression(expression, replacement, context);
-            return true;
+            if let Some(result_value) = result {
+                let replacement = make_numeric_literal(context, result_value);
+                operations::replace_expression(expression, replacement, context);
+                return true;
+            }
         }
 
         // Try numeric comparison.
@@ -160,6 +227,52 @@ fn try_fold_binary_expression<'a>(
         let replacement = make_string_literal(context, &concatenated);
         operations::replace_expression(expression, replacement, context);
         return true;
+    }
+
+    // JSFuck: Array + Array → string concatenation of their elements.
+    // [X] + [Y] → "XY" where X and Y are single literal elements.
+    if binary.operator == BinaryOperator::Addition {
+        let left_str = coerce_array_to_string(unwrap_parens(&binary.left));
+        let right_str = coerce_array_to_string(unwrap_parens(&binary.right));
+        if let (Some(left_val), Some(right_val)) = (left_str, right_str) {
+            let concatenated = format!("{left_val}{right_val}");
+            let replacement = make_string_literal(context, &concatenated);
+            operations::replace_expression(expression, replacement, context);
+            return true;
+        }
+
+        // String + Array or Array + String: coerce the array side.
+        if let Some(array_str) = coerce_array_to_string(unwrap_parens(&binary.right))
+            && let Expression::StringLiteral(left) = unwrap_parens(&binary.left)
+        {
+            let concatenated = format!("{}{}", left.value, array_str);
+            let replacement = make_string_literal(context, &concatenated);
+            operations::replace_expression(expression, replacement, context);
+            return true;
+        }
+        if let Some(array_str) = coerce_array_to_string(unwrap_parens(&binary.left))
+            && let Expression::StringLiteral(right) = unwrap_parens(&binary.right)
+        {
+            let concatenated = format!("{}{}", array_str, right.value);
+            let replacement = make_string_literal(context, &concatenated);
+            operations::replace_expression(expression, replacement, context);
+            return true;
+        }
+    }
+
+    // JSFuck: String - numeric → number.
+    // "10" - 0 → 10, "10" - [] → 10 ([] coerces to 0).
+    if binary.operator == BinaryOperator::Subtraction {
+        let left_num = coerce_to_number_from_string_or_literal(unwrap_parens(&binary.left));
+        let right_num = coerce_to_number_from_string_or_literal(unwrap_parens(&binary.right));
+        if let (Some(left_val), Some(right_val)) = (left_num, right_num) {
+            let result = left_val - right_val;
+            if result.is_finite() {
+                let replacement = make_numeric_literal(context, result);
+                operations::replace_expression(expression, replacement, context);
+                return true;
+            }
+        }
     }
 
     false
