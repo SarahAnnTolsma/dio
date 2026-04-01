@@ -147,7 +147,14 @@ pub fn annotate_browserify_requires(source: &str) -> String {
         .map(|(name, _id)| (name.clone(), path_to_identifier(name)))
         .collect();
 
-    // Annotate require calls by placing `/** @type {module_N} */` before the
+    // Extract the set of require parameter names from module function signatures.
+    // Pattern: `function module_name(PARAM, ...` — PARAM is the require function.
+    let require_names = extract_require_parameter_names(source);
+    if require_names.is_empty() {
+        return source.to_string();
+    }
+
+    // Annotate require calls by placing `/** @type {name} */` before the
     // enclosing `var` declaration (so the type applies to the variable, not
     // the require function). If there's no `var` on the same line, place it
     // before the require call itself.
@@ -155,9 +162,9 @@ pub fn annotate_browserify_requires(source: &str) -> String {
     let mut remaining = source;
 
     while !remaining.is_empty() {
-        if let Some(pos) = find_require_call(remaining) {
+        if let Some((pos, param_len)) = find_require_call(remaining, &require_names) {
             let call_start = pos;
-            let after_paren = &remaining[call_start + 2..]; // skip `n(`
+            let after_paren = &remaining[call_start + param_len + 1..]; // skip `name(`
             let quote = after_paren.as_bytes()[0];
             if quote == b'"' || quote == b'\'' {
                 if let Some(end_quote) = after_paren[1..].find(quote as char) {
@@ -205,25 +212,79 @@ pub fn annotate_browserify_requires(source: &str) -> String {
     result
 }
 
-/// Find the position of the next `n("` or `n('` pattern that looks like a require call.
-fn find_require_call(source: &str) -> Option<usize> {
+/// Find the position of the next `name("` or `name('` pattern that looks like
+/// a require call, where `name` is one of the known require parameter names.
+/// Returns the position and the length of the parameter name.
+fn find_require_call(source: &str, require_names: &[String]) -> Option<(usize, usize)> {
     let bytes = source.as_bytes();
-    for i in 0..bytes.len().saturating_sub(2) {
-        if bytes[i] == b'n'
-            && bytes[i + 1] == b'('
-            && (bytes[i + 2] == b'"' || bytes[i + 2] == b'\'')
-        {
-            // Make sure `n` is not part of a larger identifier.
-            if i > 0 {
-                let prev = bytes[i - 1];
-                if prev.is_ascii_alphanumeric() || prev == b'_' || prev == b'$' {
-                    continue;
+    for i in 0..bytes.len() {
+        // Check if this position is the start of an identifier (not mid-identifier).
+        if i > 0 {
+            let prev = bytes[i - 1];
+            if prev.is_ascii_alphanumeric() || prev == b'_' || prev == b'$' {
+                continue;
+            }
+        }
+
+        for name in require_names {
+            let name_bytes = name.as_bytes();
+            let end = i + name_bytes.len();
+            if end + 2 > bytes.len() {
+                continue;
+            }
+            if &bytes[i..end] == name_bytes
+                && bytes[end] == b'('
+                && (bytes[end + 1] == b'"' || bytes[end + 1] == b'\'')
+            {
+                // Verify the name isn't part of a larger identifier.
+                if end < bytes.len()
+                    && bytes[end] == b'('
+                {
+                    return Some((i, name_bytes.len()));
                 }
             }
-            return Some(i);
         }
     }
     None
+}
+
+/// Extract require parameter names from Browserify module function signatures.
+///
+/// Looks for `function name(PARAM,` patterns in the source and collects
+/// unique first parameter names.
+fn extract_require_parameter_names(source: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+
+    // Match: `[function name(PARAM,` — the first param after the opening paren.
+    let mut search_from = 0;
+    while let Some(pos) = source[search_from..].find("[function ") {
+        let abs_pos = search_from + pos;
+        let after_func = &source[abs_pos + 10..]; // skip `[function `
+
+        // Find the opening paren.
+        if let Some(paren_pos) = after_func.find('(') {
+            let after_paren = &after_func[paren_pos + 1..];
+            // Extract the first parameter name (up to comma or close paren).
+            let param_end = after_paren
+                .find(|c: char| c == ',' || c == ')' || c == ' ')
+                .unwrap_or(0);
+            if param_end > 0 {
+                let param_name = &after_paren[..param_end];
+                if !param_name.is_empty()
+                    && param_name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+                    && !names.contains(&param_name.to_string())
+                {
+                    names.push(param_name.to_string());
+                }
+            }
+        }
+
+        search_from = abs_pos + 10;
+    }
+
+    names
 }
 
 /// Build a map of dependency name → module ID from the source.
