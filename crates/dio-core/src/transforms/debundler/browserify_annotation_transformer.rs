@@ -1,4 +1,5 @@
-//! Annotates Browserify-bundled modules with JSDoc comments and named functions.
+//! Annotates Browserify-bundled modules with named functions and JSDoc type
+//! comments on require calls.
 //!
 //! Browserify bundles look like:
 //!
@@ -9,9 +10,9 @@
 //! }, {}, [9]);
 //! ```
 //!
-//! This transformer:
-//! - Adds `/** @module N — deps: ./foo (4), ./bar (5) */` comments before each module
-//! - Names anonymous module functions as `module_N`
+//! This transformer names anonymous module functions as `module_N`.
+//! The `annotate_browserify_requires` post-processing function adds
+//! `/** @type {module_N} */` comments to require calls.
 
 use std::collections::HashMap;
 
@@ -23,7 +24,7 @@ use oxc_traverse::TraverseCtx;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 use crate::utils::unwrap_parens;
 
-/// Annotates Browserify modules with JSDoc comments and names.
+/// Annotates Browserify modules with named functions.
 pub struct BrowserifyAnnotationTransformer;
 
 impl Transformer for BrowserifyAnnotationTransformer {
@@ -36,7 +37,6 @@ impl Transformer for BrowserifyAnnotationTransformer {
     }
 
     fn priority(&self) -> TransformerPriority {
-        // Run last so other transformers have already cleaned up the code.
         TransformerPriority::Last
     }
 
@@ -49,14 +49,13 @@ impl Transformer for BrowserifyAnnotationTransformer {
         statements: &mut ArenaVec<'a, Statement<'a>>,
         context: &mut TraverseCtx<'a, ()>,
     ) -> bool {
+        let mut changed = false;
+
         // Phase 1: Find Browserify bundles and collect module info (immutable).
-        let mut bundle_indices: Vec<(usize, HashMap<i64, ModuleInfo>)> = Vec::new();
+        let mut bundle_indices: Vec<usize> = Vec::new();
         for index in 0..statements.len() {
-            if let Some(modules_object) = extract_browserify_modules(&statements[index]) {
-                let module_info = extract_module_info(modules_object);
-                if !module_info.is_empty() {
-                    bundle_indices.push((index, module_info));
-                }
+            if extract_browserify_modules(&statements[index]).is_some() {
+                bundle_indices.push(index);
             }
         }
 
@@ -64,10 +63,8 @@ impl Transformer for BrowserifyAnnotationTransformer {
             return false;
         }
 
-        // Phase 2: Annotate module functions (mutable).
-        // Navigate inline to avoid holding a reference across loop iterations.
-        let mut changed = false;
-        for (index, module_info) in bundle_indices {
+        // Phase 2: Name module functions (mutable).
+        for index in bundle_indices {
             let Statement::ExpressionStatement(expression_statement) = &mut statements[index]
             else {
                 continue;
@@ -108,39 +105,12 @@ impl Transformer for BrowserifyAnnotationTransformer {
                     continue;
                 };
 
-                // Name the anonymous module function.
                 if function.id.is_none() {
                     let name = format!("module_{module_id}");
                     let atom = context.ast.atom(&name);
                     let binding = context.ast.binding_identifier(SPAN, atom);
                     function.id = Some(binding);
                     changed = true;
-                }
-
-                // Add a directive-like annotation as the first statement.
-                if let Some(info) = module_info.get(&module_id) {
-                    if let Some(body) = &mut function.body {
-                        // Skip if already annotated.
-                        let already_annotated = body.statements.first().is_some_and(|stmt| {
-                            if let Statement::ExpressionStatement(stmt) = stmt {
-                                if let Expression::StringLiteral(lit) = &stmt.expression {
-                                    return lit.value.starts_with("@module");
-                                }
-                            }
-                            false
-                        });
-
-                        if !already_annotated && !body.statements.is_empty() {
-                            let comment = build_module_comment(module_id, info);
-                            let comment_atom = context.ast.atom(&comment);
-                            let comment_literal =
-                                context.ast.expression_string_literal(SPAN, comment_atom, None);
-                            let comment_statement =
-                                context.ast.statement_expression(SPAN, comment_literal);
-                            body.statements.insert(0, comment_statement);
-                            changed = true;
-                        }
-                    }
                 }
             }
         }
@@ -149,10 +119,125 @@ impl Transformer for BrowserifyAnnotationTransformer {
     }
 }
 
-/// Information about a single module's dependencies.
-struct ModuleInfo {
-    /// Map of dependency name → module ID.
-    dependencies: Vec<(String, i64)>,
+/// Post-process codegen output to add `/** @type {module_N} */` JSDoc comments
+/// on require calls in Browserify bundles.
+///
+/// Parses the output to find the Browserify module structure, builds a
+/// dependency map, then annotates `require("...")` calls with type comments.
+pub fn annotate_browserify_requires(source: &str) -> String {
+    // Parse the output to extract module dependency maps.
+    // We look for patterns like:
+    //   N: [function module_N(n, t, e) {
+    // and dependency maps like:
+    //   }, { "../common/Foo": 4, "../common/Bar": 5 }]
+    let dep_map = build_dependency_map(source);
+    if dep_map.is_empty() {
+        return source.to_string();
+    }
+
+    // Build a reverse map: dependency name → module name (e.g., "../common/Foo" → "module_4").
+    let reverse_map: HashMap<String, String> = dep_map
+        .iter()
+        .map(|(name, id)| (name.clone(), format!("module_{id}")))
+        .collect();
+
+    // Annotate require calls: `n("../common/Foo")` → `/** @type {module_4} */ n("../common/Foo")`
+    // Also handle: `var i = n("../common/Foo")` → `/** @type {module_4} */ var i = n("../common/Foo")`
+    let mut result = String::with_capacity(source.len() + 1024);
+    let mut remaining = source;
+
+    while !remaining.is_empty() {
+        // Find the next require-like call: n("...") or n('...')
+        if let Some(pos) = find_require_call(remaining) {
+            // Extract the module name from the string argument.
+            let call_start = pos;
+            let after_paren = &remaining[call_start + 2..]; // skip `n(`
+            let quote = after_paren.as_bytes()[0];
+            if quote == b'"' || quote == b'\'' {
+                if let Some(end_quote) = after_paren[1..].find(quote as char) {
+                    let module_name = &after_paren[1..1 + end_quote];
+
+                    if let Some(module_func_name) = reverse_map.get(module_name) {
+                        // Find the start of the line or statement to place the comment.
+                        result.push_str(&remaining[..call_start]);
+                        result.push_str(&format!("/** @type {{{module_func_name}}} */ "));
+                        remaining = &remaining[call_start..];
+                        // Advance past the require call.
+                        let close_paren = remaining.find(')').unwrap_or(0) + 1;
+                        result.push_str(&remaining[..close_paren]);
+                        remaining = &remaining[close_paren..];
+                        continue;
+                    }
+                }
+            }
+
+            // No match — advance past this position.
+            result.push_str(&remaining[..call_start + 1]);
+            remaining = &remaining[call_start + 1..];
+        } else {
+            result.push_str(remaining);
+            break;
+        }
+    }
+
+    result
+}
+
+/// Find the position of the next `n("` or `n('` pattern that looks like a require call.
+fn find_require_call(source: &str) -> Option<usize> {
+    let bytes = source.as_bytes();
+    for i in 0..bytes.len().saturating_sub(2) {
+        if bytes[i] == b'n'
+            && bytes[i + 1] == b'('
+            && (bytes[i + 2] == b'"' || bytes[i + 2] == b'\'')
+        {
+            // Make sure `n` is not part of a larger identifier.
+            if i > 0 {
+                let prev = bytes[i - 1];
+                if prev.is_ascii_alphanumeric() || prev == b'_' || prev == b'$' {
+                    continue;
+                }
+            }
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Build a map of dependency name → module ID from the source.
+fn build_dependency_map(source: &str) -> HashMap<String, i64> {
+    let mut map = HashMap::new();
+
+    // Find dependency objects: { "name": N, "name2": M }
+    // These appear after `}, {` in the Browserify bundle.
+    let mut search_from = 0;
+    while let Some(pos) = source[search_from..].find("\":\u{20}") {
+        let abs_pos = search_from + pos;
+
+        // Walk backwards to find the opening quote of the key.
+        let key_start = source[..abs_pos].rfind('"');
+        if let Some(key_start) = key_start {
+            let key = &source[key_start + 1..abs_pos];
+
+            // Walk forward to find the numeric value after ": ".
+            let after_colon = &source[abs_pos + 3..];
+            let num_end = after_colon
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(after_colon.len());
+            if num_end > 0 {
+                if let Ok(id) = after_colon[..num_end].parse::<i64>() {
+                    // Only include paths that look like module dependencies.
+                    if key.starts_with("./") || key.starts_with("../") {
+                        map.insert(key.to_string(), id);
+                    }
+                }
+            }
+        }
+
+        search_from = abs_pos + 3;
+    }
+
+    map
 }
 
 /// Extract the modules object from a Browserify IIFE statement (immutable).
@@ -164,7 +249,6 @@ fn extract_browserify_modules<'a>(
     };
     let expression = unwrap_parens(&expression_statement.expression);
 
-    // Pattern: !function(t, e, i) { ... }({...}, {}, [...])
     let Expression::UnaryExpression(unary) = expression else {
         return None;
     };
@@ -175,17 +259,13 @@ fn extract_browserify_modules<'a>(
         return None;
     };
 
-    // The runtime function should have 3 parameters.
     if function.params.items.len() != 3 {
         return None;
     }
-
-    // Must have 3 arguments: modules object, cache object, entries array.
     if call.arguments.len() != 3 {
         return None;
     }
 
-    // First argument must be an object expression (the modules).
     let Some(first_arg) = call.arguments[0].as_expression() else {
         return None;
     };
@@ -193,8 +273,6 @@ fn extract_browserify_modules<'a>(
         return None;
     };
 
-    // Verify it looks like Browserify modules: properties with numeric keys
-    // whose values are arrays.
     let has_module_structure = modules.properties.iter().any(|prop| {
         if let ObjectPropertyKind::ObjectProperty(property) = prop {
             extract_property_key_number(&property.key).is_some()
@@ -211,90 +289,11 @@ fn extract_browserify_modules<'a>(
     Some(modules)
 }
 
-/// Extract module info (dependencies) from the modules object.
-fn extract_module_info(
-    modules: &oxc_ast::ast::ObjectExpression<'_>,
-) -> HashMap<i64, ModuleInfo> {
-    let mut info = HashMap::new();
-
-    for property in &modules.properties {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            continue;
-        };
-
-        let Some(module_id) = extract_property_key_number(&property.key) else {
-            continue;
-        };
-
-        let Expression::ArrayExpression(array) = &property.value else {
-            continue;
-        };
-
-        // Second element is the dependency map: { "name": id, ... }
-        let dependencies = if array.elements.len() >= 2 {
-            if let Some(Expression::ObjectExpression(deps_object)) =
-                array.elements[1].as_expression()
-            {
-                extract_dependency_map(deps_object)
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
-
-        info.insert(module_id, ModuleInfo { dependencies });
-    }
-
-    info
-}
-
-/// Extract dependency name → module ID pairs from a dependency object.
-fn extract_dependency_map(
-    deps: &oxc_ast::ast::ObjectExpression<'_>,
-) -> Vec<(String, i64)> {
-    let mut result = Vec::new();
-
-    for property in &deps.properties {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            continue;
-        };
-
-        let name = match &property.key {
-            PropertyKey::StringLiteral(string) => string.value.to_string(),
-            PropertyKey::StaticIdentifier(identifier) => identifier.name.to_string(),
-            _ => continue,
-        };
-
-        let Expression::NumericLiteral(number) = &property.value else {
-            continue;
-        };
-
-        result.push((name, number.value as i64));
-    }
-
-    result
-}
-
 /// Extract a numeric key from a property key.
 fn extract_property_key_number(key: &PropertyKey<'_>) -> Option<i64> {
     match key {
         PropertyKey::NumericLiteral(number) => Some(number.value as i64),
         PropertyKey::StringLiteral(string) => string.value.parse::<i64>().ok(),
         _ => None,
-    }
-}
-
-/// Build a JSDoc-style comment string for a module.
-fn build_module_comment(module_id: i64, info: &ModuleInfo) -> String {
-    if info.dependencies.is_empty() {
-        format!("@module {module_id}")
-    } else {
-        let deps: Vec<String> = info
-            .dependencies
-            .iter()
-            .map(|(name, id)| format!("{name} ({id})"))
-            .collect();
-        format!("@module {module_id} — requires: {}", deps.join(", "))
     }
 }

@@ -154,10 +154,8 @@ fn is_side_effect_free_expression(expression: &Expression<'_>) -> bool {
         | Expression::BooleanLiteral(_)
         | Expression::NullLiteral(_) => true,
         Expression::StringLiteral(string) => {
-            // Preserve directive prologues ("use strict", "use asm", etc.)
-            // and debundler annotations ("@module ...").
-            let value = string.value.as_str();
-            !value.starts_with("use ") && !value.starts_with("@module")
+            // Preserve directive prologues ("use strict", "use asm", etc.).
+            !string.value.as_str().starts_with("use ")
         }
         // `void 0`, `void <literal>`, `typeof <identifier>` — no side effects.
         Expression::UnaryExpression(unary) => {

@@ -6,3 +6,4 @@
 mod browserify_annotation_transformer;
 
 pub use browserify_annotation_transformer::BrowserifyAnnotationTransformer;
+pub use browserify_annotation_transformer::annotate_browserify_requires;

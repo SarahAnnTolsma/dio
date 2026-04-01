@@ -5,7 +5,7 @@ use std::io::{self, Read};
 use std::process;
 
 use clap::Parser;
-use dio_core::{Deobfuscator, Preset};
+use dio_core::{Deobfuscator, Preset, annotate_browserify_requires};
 
 /// dio — JavaScript deobfuscation tool.
 ///
@@ -94,7 +94,12 @@ fn main() {
     }
 
     // Run deobfuscation.
-    let result = deobfuscator.deobfuscate(&source);
+    let mut result = deobfuscator.deobfuscate(&source);
+
+    // Post-process: annotate Browserify require calls with JSDoc types.
+    if presets.contains(&Preset::Debundler) {
+        result = annotate_browserify_requires(&result);
+    }
 
     // Write output.
     if let Some(output_path) = &arguments.output {
