@@ -25,6 +25,7 @@ use oxc_span::SPAN;
 use oxc_syntax::symbol::SymbolId;
 use oxc_traverse::TraverseCtx;
 
+use crate::operations;
 use crate::transformer::{AstNodeType, Transformer, TransformerPhase, TransformerPriority};
 use crate::utils::unwrap_parens;
 
@@ -108,10 +109,20 @@ impl Transformer for SwitchDispatchTransformer {
                         if let Some(init) = &declarator.init
                             && let Expression::FunctionExpression(function) = init
                             && let Some(dispatch) = analyze_dispatch_function(function)
-                            && let Some(binding) = &function.id
-                            && let Some(symbol_id) = binding.symbol_id.get()
                         {
-                            dispatchers.insert(symbol_id, dispatch);
+                            // Register both the function expression name (lK) and
+                            // the variable name (M6) so calls via either name match.
+                            if let Some(binding) = &function.id
+                                && let Some(symbol_id) = binding.symbol_id.get()
+                            {
+                                dispatchers.insert(symbol_id, dispatch.clone());
+                            }
+                            if let oxc_ast::ast::BindingPattern::BindingIdentifier(var_binding) =
+                                &declarator.id
+                                && let Some(var_symbol) = var_binding.symbol_id.get()
+                            {
+                                dispatchers.insert(var_symbol, dispatch);
+                            }
                         }
                     }
                 }
@@ -268,8 +279,202 @@ impl Transformer for SwitchDispatchTransformer {
             }
         }
 
+        // Phase 3: Re-analyze the dispatch function with resolved transitions,
+        // then find and replace call sites with linearized bodies.
+        // We need to re-analyze because Phase 2 modified the transitions.
+        let mut updated_dispatchers: HashMap<SymbolId, DispatchFunction> = HashMap::new();
+        for statement in statements.iter() {
+            if let Statement::VariableDeclaration(declaration) = statement {
+                for declarator in &declaration.declarations {
+                    if let Some(Expression::FunctionExpression(function)) = &declarator.init
+                        && let Some(dispatch) = analyze_dispatch_function(function)
+                    {
+                        if let Some(binding) = &function.id
+                            && let Some(symbol_id) = binding.symbol_id.get()
+                            && dispatchers.contains_key(&symbol_id)
+                        {
+                            updated_dispatchers.insert(symbol_id, dispatch.clone());
+                        }
+                        if let oxc_ast::ast::BindingPattern::BindingIdentifier(var_binding) =
+                            &declarator.id
+                            && let Some(var_symbol) = var_binding.symbol_id.get()
+                            && dispatchers.contains_key(&var_symbol)
+                        {
+                            updated_dispatchers.insert(var_symbol, dispatch);
+                        }
+                    }
+                }
+            }
+            if let Statement::FunctionDeclaration(function) = statement
+                && let Some(dispatch) = analyze_dispatch_function(function)
+                && let Some(binding) = &function.id
+                && let Some(symbol_id) = binding.symbol_id.get()
+                && dispatchers.contains_key(&symbol_id)
+            {
+                updated_dispatchers.insert(symbol_id, dispatch);
+            }
+        }
+
+        // Find call sites: expression statements that call a dispatch function
+        // with a known numeric entry value.
+        let mut call_replacements: Vec<(usize, SymbolId, i64)> = Vec::new();
+        for (index, statement) in statements.iter().enumerate() {
+            let Statement::ExpressionStatement(expr_stmt) = statement else {
+                continue;
+            };
+            if let Some((symbol_id, entry_value)) =
+                extract_dispatch_call(&expr_stmt.expression, &updated_dispatchers, context)
+            {
+                call_replacements.push((index, symbol_id, entry_value));
+            }
+        }
+
+        // Build a plan: for each call site, compute which (case_index, stmt_indices)
+        // to extract, in order. This is done immutably.
+        #[allow(clippy::type_complexity)]
+        let mut linearization_plan: Vec<(usize, Vec<(usize, Vec<usize>)>)> = Vec::new();
+
+        for &(call_index, symbol_id, entry_value) in call_replacements.iter().rev() {
+            let Some(dispatch) = updated_dispatchers.get(&symbol_id) else {
+                continue;
+            };
+            let Some(traced_states) = trace_dispatch(entry_value, dispatch) else {
+                continue;
+            };
+
+            let mut case_extractions: Vec<(usize, Vec<usize>)> = Vec::new();
+            for &state in &traced_states {
+                if let Some(case_info) = dispatch.cases.get(&state)
+                    && !case_info.statement_indices.is_empty()
+                {
+                    case_extractions
+                        .push((case_info.case_index, case_info.statement_indices.clone()));
+                }
+            }
+
+            if !case_extractions.is_empty() {
+                linearization_plan.push((call_index, case_extractions));
+            }
+        }
+
+        // Execute the plan: extract statements from the switch and replace call sites.
+        // Find the dispatch function statement index once.
+        let func_stmt_index = find_dispatch_switch_index(statements, &dispatchers);
+
+        for (call_index, case_extractions) in &linearization_plan {
+            let Some(func_index) = func_stmt_index else {
+                continue;
+            };
+
+            // Navigate to the switch inside the function.
+            let switch = navigate_to_switch(&mut statements[func_index]);
+            let Some(switch) = switch else {
+                continue;
+            };
+
+            let mut replacement_stmts: Vec<Statement<'a>> = Vec::new();
+            for (case_idx, stmt_indices) in case_extractions {
+                let case = &mut switch.cases[*case_idx];
+                for &stmt_idx in stmt_indices {
+                    if stmt_idx < case.consequent.len() {
+                        let stmt = std::mem::replace(
+                            &mut case.consequent[stmt_idx],
+                            context.ast.statement_empty(SPAN),
+                        );
+                        replacement_stmts.push(stmt);
+                    }
+                }
+            }
+
+            if !replacement_stmts.is_empty() {
+                let arena_replacements = context.ast.vec_from_iter(replacement_stmts);
+                operations::replace_statement_with_multiple(
+                    statements,
+                    *call_index,
+                    arena_replacements,
+                    context,
+                );
+                changed = true;
+            }
+        }
+
         changed
     }
+}
+
+/// Find the statement index containing the dispatch function.
+fn find_dispatch_switch_index(
+    statements: &[Statement<'_>],
+    dispatchers: &HashMap<SymbolId, DispatchFunction>,
+) -> Option<usize> {
+    for (index, statement) in statements.iter().enumerate() {
+        match statement {
+            Statement::VariableDeclaration(declaration) => {
+                for declarator in &declaration.declarations {
+                    if let Some(Expression::FunctionExpression(function)) = &declarator.init {
+                        // Check function expression name.
+                        if let Some(binding) = &function.id
+                            && let Some(symbol_id) = binding.symbol_id.get()
+                            && dispatchers.contains_key(&symbol_id)
+                        {
+                            return Some(index);
+                        }
+                        // Check variable name.
+                        if let oxc_ast::ast::BindingPattern::BindingIdentifier(var_binding) =
+                            &declarator.id
+                            && let Some(var_symbol) = var_binding.symbol_id.get()
+                            && dispatchers.contains_key(&var_symbol)
+                        {
+                            return Some(index);
+                        }
+                    }
+                }
+            }
+            Statement::FunctionDeclaration(function) => {
+                if let Some(binding) = &function.id
+                    && let Some(symbol_id) = binding.symbol_id.get()
+                    && dispatchers.contains_key(&symbol_id)
+                {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Navigate from a statement to the switch inside a dispatch function.
+fn navigate_to_switch<'a, 'b>(
+    statement: &'b mut Statement<'a>,
+) -> Option<&'b mut oxc_ast::ast::SwitchStatement<'a>> {
+    let function = match statement {
+        Statement::VariableDeclaration(declaration) => {
+            declaration.declarations.iter_mut().find_map(|d| {
+                if let Some(Expression::FunctionExpression(f)) = &mut d.init {
+                    Some(&mut **f)
+                } else {
+                    None
+                }
+            })
+        }
+        Statement::FunctionDeclaration(f) => Some(&mut **f),
+        _ => None,
+    }?;
+
+    let body = function.body.as_mut()?;
+    for stmt in body.statements.iter_mut() {
+        if let Statement::WhileStatement(while_stmt) = stmt
+            && let Statement::BlockStatement(while_body) = &mut while_stmt.body
+        {
+            for inner_stmt in while_body.body.iter_mut() {
+                if let Statement::SwitchStatement(sw) = inner_stmt {
+                    return Some(sw);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Analyze a function to determine if it's a dispatch function.
