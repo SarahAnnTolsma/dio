@@ -343,22 +343,10 @@ fn try_fold_logical_expression<'a>(
 
     match operator {
         LogicalOperator::And => {
-            if let Some(false) = right_truthiness {
-                // `x && false` → `(x, false)` — preserve x for side effects
-                let left = std::mem::replace(
-                    &mut logical.left,
-                    context.ast.expression_null_literal(SPAN),
-                );
-                let right = std::mem::replace(
-                    &mut logical.right,
-                    context.ast.expression_null_literal(SPAN),
-                );
-                let mut expressions = context.ast.vec_with_capacity(2);
-                expressions.push(left);
-                expressions.push(right);
-                operations::replace_expression_with_sequence(expression, expressions, context);
-                return true;
-            }
+            // NOTE: `x && false` is NOT simplified to `(x, false)` because in value
+            // position, `x && false` returns `x` (if falsy) or `false`, while
+            // `(x, false)` always returns `false`. Only safe in statement position,
+            // which we can't detect here.
             if let Some(false) = left_truthiness {
                 // `false && x` → `false` — short-circuit, x is never evaluated
                 let left = std::mem::replace(
@@ -388,22 +376,10 @@ fn try_fold_logical_expression<'a>(
             }
         }
         LogicalOperator::Or => {
-            if let Some(true) = right_truthiness {
-                // `x || true` → `(x, true)` — preserve x for side effects
-                let left = std::mem::replace(
-                    &mut logical.left,
-                    context.ast.expression_null_literal(SPAN),
-                );
-                let right = std::mem::replace(
-                    &mut logical.right,
-                    context.ast.expression_null_literal(SPAN),
-                );
-                let mut expressions = context.ast.vec_with_capacity(2);
-                expressions.push(left);
-                expressions.push(right);
-                operations::replace_expression_with_sequence(expression, expressions, context);
-                return true;
-            }
+            // NOTE: `x || true` is NOT simplified to `(x, true)` because in value
+            // position, `x || true` returns `x` (if truthy) or `true`, while
+            // `(x, true)` always returns `true`. Only safe in statement position,
+            // which we can't detect here.
             if let Some(true) = left_truthiness {
                 // `true || x` → `true` — short-circuit, x is never evaluated
                 let left = std::mem::replace(
