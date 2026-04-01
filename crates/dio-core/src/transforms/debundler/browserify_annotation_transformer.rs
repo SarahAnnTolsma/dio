@@ -51,11 +51,13 @@ impl Transformer for BrowserifyAnnotationTransformer {
     ) -> bool {
         let mut changed = false;
 
-        // Phase 1: Find Browserify bundles and collect module info (immutable).
-        let mut bundle_indices: Vec<usize> = Vec::new();
+        // Phase 1: Find Browserify bundles and build module name map (immutable).
+        let mut bundle_indices: Vec<(usize, HashMap<i64, String>)> = Vec::new();
         for index in 0..statements.len() {
-            if extract_browserify_modules(&statements[index]).is_some() {
-                bundle_indices.push(index);
+            if let Some(modules_object) = extract_browserify_modules(&statements[index]) {
+                let info = extract_module_info(modules_object);
+                let name_map = build_module_name_map(&info);
+                bundle_indices.push((index, name_map));
             }
         }
 
@@ -64,7 +66,8 @@ impl Transformer for BrowserifyAnnotationTransformer {
         }
 
         // Phase 2: Name module functions (mutable).
-        for index in bundle_indices {
+        for (index, name_map) in &bundle_indices {
+            let index = *index;
             let Statement::ExpressionStatement(expression_statement) = &mut statements[index]
             else {
                 continue;
@@ -106,7 +109,10 @@ impl Transformer for BrowserifyAnnotationTransformer {
                 };
 
                 if function.id.is_none() {
-                    let name = format!("module_{module_id}");
+                    let name = name_map
+                        .get(&module_id)
+                        .cloned()
+                        .unwrap_or_else(|| format!("module_{module_id}"));
                     let atom = context.ast.atom(&name);
                     let binding = context.ast.binding_identifier(SPAN, atom);
                     function.id = Some(binding);
@@ -135,10 +141,10 @@ pub fn annotate_browserify_requires(source: &str) -> String {
         return source.to_string();
     }
 
-    // Build a reverse map: dependency name → module name (e.g., "../common/Foo" → "module_4").
+    // Build a reverse map: dependency name → readable module name.
     let reverse_map: HashMap<String, String> = dep_map
         .iter()
-        .map(|(name, id)| (name.clone(), format!("module_{id}")))
+        .map(|(name, _id)| (name.clone(), path_to_identifier(name)))
         .collect();
 
     // Annotate require calls by placing `/** @type {module_N} */` before the
@@ -254,6 +260,134 @@ fn build_dependency_map(source: &str) -> HashMap<String, i64> {
     }
 
     map
+}
+
+/// Information about a single module's dependencies.
+struct ModuleInfo {
+    dependencies: Vec<(String, i64)>,
+}
+
+/// Extract module info (dependencies) from the modules object.
+fn extract_module_info(
+    modules: &oxc_ast::ast::ObjectExpression<'_>,
+) -> HashMap<i64, ModuleInfo> {
+    let mut info = HashMap::new();
+
+    for property in &modules.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else {
+            continue;
+        };
+
+        let Some(module_id) = extract_property_key_number(&property.key) else {
+            continue;
+        };
+
+        let Expression::ArrayExpression(array) = &property.value else {
+            continue;
+        };
+
+        let dependencies = if array.elements.len() >= 2 {
+            if let Some(Expression::ObjectExpression(deps_object)) =
+                array.elements[1].as_expression()
+            {
+                extract_dependency_map(deps_object)
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        info.insert(module_id, ModuleInfo { dependencies });
+    }
+
+    info
+}
+
+/// Extract dependency name → module ID pairs from a dependency object.
+fn extract_dependency_map(
+    deps: &oxc_ast::ast::ObjectExpression<'_>,
+) -> Vec<(String, i64)> {
+    let mut result = Vec::new();
+
+    for property in &deps.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else {
+            continue;
+        };
+
+        let name = match &property.key {
+            PropertyKey::StringLiteral(string) => string.value.to_string(),
+            PropertyKey::StaticIdentifier(identifier) => identifier.name.to_string(),
+            _ => continue,
+        };
+
+        let Expression::NumericLiteral(number) = &property.value else {
+            continue;
+        };
+
+        result.push((name, number.value as i64));
+    }
+
+    result
+}
+
+/// Build a map of module ID → readable function name from dependency info.
+///
+/// Derives names from dependency paths: `../common/DataDomeTools` → `common_DataDomeTools`.
+/// Modules with no incoming dependency references get `module_N` as a fallback.
+fn build_module_name_map(info: &HashMap<i64, ModuleInfo>) -> HashMap<i64, String> {
+    // Collect all (target_id, path) pairs from dependency maps.
+    let mut id_to_paths: HashMap<i64, Vec<&str>> = HashMap::new();
+    for module_info in info.values() {
+        for (path, target_id) in &module_info.dependencies {
+            id_to_paths.entry(*target_id).or_default().push(path);
+        }
+    }
+
+    let mut name_map = HashMap::new();
+    for (&module_id, _) in info {
+        let name = if let Some(paths) = id_to_paths.get(&module_id) {
+            // Pick the shortest path as the canonical name.
+            let best_path = paths.iter().min_by_key(|p| p.len()).unwrap();
+            path_to_identifier(best_path)
+        } else {
+            format!("module_{module_id}")
+        };
+        name_map.insert(module_id, name);
+    }
+
+    name_map
+}
+
+/// Convert a module path like `../common/DataDomeTools.js` to a valid
+/// JS identifier like `common_DataDomeTools`.
+fn path_to_identifier(path: &str) -> String {
+    // Strip leading ./ and ../
+    let mut cleaned = path;
+    while cleaned.starts_with("../") {
+        cleaned = &cleaned[3..];
+    }
+    if cleaned.starts_with("./") {
+        cleaned = &cleaned[2..];
+    }
+
+    // Strip .js extension.
+    if cleaned.ends_with(".js") {
+        cleaned = &cleaned[..cleaned.len() - 3];
+    }
+
+    // Replace path separators and invalid chars with underscores.
+    let result: String = cleaned
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '$' { c } else { '_' })
+        .collect();
+
+    // Ensure it starts with a valid identifier character.
+    if result.is_empty() || result.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("module_{result}")
+    } else {
+        result
+    }
 }
 
 /// Extract the modules object from a Browserify IIFE statement (immutable).
