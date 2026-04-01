@@ -141,15 +141,15 @@ pub fn annotate_browserify_requires(source: &str) -> String {
         .map(|(name, id)| (name.clone(), format!("module_{id}")))
         .collect();
 
-    // Annotate require calls: `n("../common/Foo")` → `/** @type {module_4} */ n("../common/Foo")`
-    // Also handle: `var i = n("../common/Foo")` → `/** @type {module_4} */ var i = n("../common/Foo")`
+    // Annotate require calls by placing `/** @type {module_N} */` before the
+    // enclosing `var` declaration (so the type applies to the variable, not
+    // the require function). If there's no `var` on the same line, place it
+    // before the require call itself.
     let mut result = String::with_capacity(source.len() + 1024);
     let mut remaining = source;
 
     while !remaining.is_empty() {
-        // Find the next require-like call: n("...") or n('...')
         if let Some(pos) = find_require_call(remaining) {
-            // Extract the module name from the string argument.
             let call_start = pos;
             let after_paren = &remaining[call_start + 2..]; // skip `n(`
             let quote = after_paren.as_bytes()[0];
@@ -158,10 +158,27 @@ pub fn annotate_browserify_requires(source: &str) -> String {
                     let module_name = &after_paren[1..1 + end_quote];
 
                     if let Some(module_func_name) = reverse_map.get(module_name) {
-                        // Find the start of the line or statement to place the comment.
-                        result.push_str(&remaining[..call_start]);
-                        result.push_str(&format!("/** @type {{{module_func_name}}} */ "));
-                        remaining = &remaining[call_start..];
+                        let annotation = format!("/** @type {{{module_func_name}}} */ ");
+
+                        // Look backwards on the same line for `var ` to attach
+                        // the annotation to the variable declaration.
+                        let line_before = &remaining[..call_start];
+                        let line_start = line_before.rfind('\n').map_or(0, |p| p + 1);
+                        let line_prefix = &remaining[line_start..call_start];
+
+                        if let Some(var_offset) = line_prefix.rfind("var ") {
+                            // Insert before `var`.
+                            let insert_at = line_start + var_offset;
+                            result.push_str(&remaining[..insert_at]);
+                            result.push_str(&annotation);
+                            remaining = &remaining[insert_at..];
+                        } else {
+                            // No var — insert before the require call.
+                            result.push_str(&remaining[..call_start]);
+                            result.push_str(&annotation);
+                            remaining = &remaining[call_start..];
+                        }
+
                         // Advance past the require call.
                         let close_paren = remaining.find(')').unwrap_or(0) + 1;
                         result.push_str(&remaining[..close_paren]);
@@ -171,7 +188,6 @@ pub fn annotate_browserify_requires(source: &str) -> String {
                 }
             }
 
-            // No match — advance past this position.
             result.push_str(&remaining[..call_start + 1]);
             remaining = &remaining[call_start + 1..];
         } else {
