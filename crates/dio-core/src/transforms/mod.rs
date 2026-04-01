@@ -1,5 +1,6 @@
 //! Built-in transformer implementations grouped by category.
 
+pub mod akamai;
 pub mod constant;
 pub mod datadome;
 pub mod debundler;

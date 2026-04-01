@@ -12,6 +12,7 @@
 //! let result = deobfuscator.deobfuscate("var x = 1 + 2;");
 //! ```
 
+mod akamai;
 mod datadome;
 mod debundler;
 mod jsfuck;
@@ -32,6 +33,10 @@ pub enum Preset {
     /// Includes all generic transforms plus specialized handling for
     /// string array rotation, proxy functions, and control flow flattening.
     ObfuscatorIo,
+
+    /// Targets Akamai Bot Manager scripts.
+    /// Includes initializer function inlining for JSFuck constant setup.
+    Akamai,
 
     /// Targets DataDome anti-bot scripts.
     /// Extends Obfuscator.io with DataDome-specific patterns like
@@ -54,6 +59,7 @@ impl Preset {
         match self {
             Preset::Generic => transforms::default_transformers(),
             Preset::ObfuscatorIo => obfuscator_io::transformers(),
+            Preset::Akamai => akamai::transformers(),
             Preset::DataDome => datadome::transformers(),
             Preset::Debundler => debundler::transformers(),
             Preset::JsFuck => jsfuck::transformers(),
@@ -67,6 +73,7 @@ impl Preset {
             "obfuscator-io" | "obfuscator_io" | "javascript-obfuscator" => {
                 Some(Preset::ObfuscatorIo)
             }
+            "akamai" | "akamai-bot-manager" | "abm" => Some(Preset::Akamai),
             "datadome" | "data-dome" | "data_dome" => Some(Preset::DataDome),
             "debundler" | "de-bundler" | "unbundler" => Some(Preset::Debundler),
             "jsfuck" => Some(Preset::JsFuck),
@@ -79,6 +86,7 @@ impl Preset {
         &[
             "generic",
             "obfuscator-io",
+            "akamai",
             "datadome",
             "debundler",
             "jsfuck",
